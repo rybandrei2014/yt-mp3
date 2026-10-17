@@ -35,7 +35,8 @@ def load_config() -> dict:
 CONFIG = load_config()
 
 QUALITIES = {
-    "best": {"label": "Best (original Opus, no re-encode)", "ext": "webm"},
+    "opus": {"label": "Opus (.opus, lossless remux - recommended)", "ext": "opus"},
+    "best": {"label": "Original stream (.webm, zero processing)", "ext": "webm"},
     "m4a": {"label": "M4A (AAC, compatible)", "ext": "m4a"},
     "mp3": {"label": "MP3 (VBR highest, compatible)", "ext": "mp3"},
 }
@@ -87,7 +88,7 @@ class PreviewRequest(BaseModel):
 
 class DownloadRequest(BaseModel):
     url: str
-    quality: str = "best"
+    quality: str = "opus"
 
 
 def base_ydl_opts() -> dict:
@@ -109,11 +110,12 @@ def build_download_opts(job: Job) -> dict:
             "format": "bestaudio[acodec^=opus]/bestaudio/best",
             "paths": {"home": str(DOWNLOADS_DIR)},
             "outtmpl": "%(uploader)s - %(title)s.%(ext)s",
+            "writethumbnail": True,
             "progress_hooks": [make_progress_hook(job)],
         }
     )
     postprocessors = []
-    if job.quality in ("m4a", "mp3"):
+    if job.quality in ("opus", "m4a", "mp3"):
         postprocessors.append(
             {
                 "key": "FFmpegExtractAudio",
@@ -121,8 +123,8 @@ def build_download_opts(job: Job) -> dict:
                 "preferredquality": "0",
             }
         )
-    postprocessors.append({"key": "EmbedThumbnail"})
     postprocessors.append({"key": "FFmpegMetadata"})
+    postprocessors.append({"key": "EmbedThumbnail"})
     opts["postprocessors"] = postprocessors
     return opts
 
@@ -195,7 +197,7 @@ def preview(req: PreviewRequest):
 def start_download(req: DownloadRequest):
     if req.quality not in QUALITIES:
         raise HTTPException(status_code=422, detail=f"unknown quality: {req.quality}")
-    if not shutil.which("ffmpeg") and req.quality in ("m4a", "mp3"):
+    if not shutil.which("ffmpeg") and req.quality in ("opus", "m4a", "mp3"):
         raise HTTPException(status_code=500, detail="ffmpeg not found on PATH")
     job = Job(id=uuid.uuid4().hex[:12], url=req.url, quality=req.quality)
     with jobs_lock:

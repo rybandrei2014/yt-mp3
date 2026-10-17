@@ -6,7 +6,7 @@ Tool to download music in the best possible quality from any YouTube video (save
 
 - YouTube's best audio stream is **Opus ~130–160 kbps (itag 251, WebM)** or **AAC 128 kbps (itag 140, M4A)**. No lossless / 320 kbps source exists.
 - savemp3's "320 kbps MP3" is marketing: it re-encodes the 128–160k source into a bigger MP3. Zero quality gain, only loss.
-- **Decision:** default = grab `bestaudio` as-is (`.opus` / `.m4a`), no transcoding. MP3 offered only as a compatibility option.
+- **Decision:** default = grab `bestaudio` and **losslessly remux Opus to `.opus` (Ogg)** — same codec, better player support than `.webm`. Raw `.webm` kept as zero-processing option; MP3/M4A offered only as compatibility options.
 
 ## 2. Core engine: yt-dlp (do not reinvent)
 

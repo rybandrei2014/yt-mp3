@@ -98,6 +98,13 @@
     <label class="qlabel"><input type="radio" name="q" value="m4a"> M4A (AAC, compatible)</label>
     <label class="qlabel"><input type="radio" name="q" value="mp3"> MP3 (VBR highest, compatible)</label>
     <label class="qlabel"><input type="checkbox" id="coverChk"> Save cover art as separate .png file</label>
+    <label class="qlabel"><input type="checkbox" id="trimChk"> Trim (cut audio to a time range)</label>
+    <div id="trimRow" style="display:none" class="row">
+      <input id="trimStart" type="text" placeholder="start (0:30 or 90)" style="flex:1;padding:10px;border-radius:8px;border:1px solid #2a2f3a;background:#171a21;color:#e6e6e6">
+      <input id="trimEnd" type="text" placeholder="end (2:45 or 165)" style="flex:1;padding:10px;border-radius:8px;border:1px solid #2a2f3a;background:#171a21;color:#e6e6e6">
+      <button id="trimPreviewBtn" class="ghost small">Preview</button>
+    </div>
+    <audio id="trimAudio" controls style="display:none;width:100%;margin-top:10px"></audio>
   </div>
 
   <div class="row" id="actions">
@@ -147,6 +154,45 @@ function fmtDur(s) {
 function qualityValue(prefix) {
   const checked = document.querySelector(`input[name=${prefix}q]:checked`);
   return checked ? checked.value : 'opus';
+}
+function parseTime(s) {
+  if (!s) return null;
+  if (/^\d+(\.\d+)?$/.test(s)) return parseFloat(s);
+  const m = s.match(/^(\d+):([0-5]?\d)(?::([0-5]?\d))?$/);
+  if (!m) return null;
+  const [, a, b, c] = m;
+  return c !== undefined ? +a * 3600 + +b * 60 + +c : +a * 60 + +b;
+}
+$('trimChk').onchange = () => {
+  $('trimRow').style.display = $('trimChk').checked ? 'flex' : 'none';
+};
+$('trimPreviewBtn').onclick = async () => {
+  hideError();
+  const start = parseTime($('trimStart').value.trim());
+  const end = parseTime($('trimEnd').value.trim());
+  if (start == null || end == null || end <= start) { showError('Invalid trim range (use mm:ss or seconds)'); return; }
+  $('trimPreviewBtn').disabled = true;
+  $('status').textContent = 'preparing preview...';
+  $('progressWrap').style.display = 'block';
+  try {
+    const r = await fetch('/api/trim-preview', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({url: $('url').value.trim(), trim: {start, end}})
+    });
+    if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
+    const res = await r.json();
+    $('trimAudio').src = `/api/trim/${res.id}`;
+    $('trimAudio').style.display = 'block';
+    $('status').textContent = '';
+  } catch (e) { showError(e.message); $('status').textContent = ''; }
+  finally { $('trimPreviewBtn').disabled = false; }
+};
+function trimValue() {
+  if (!$('trimChk').checked) return null;
+  const start = parseTime($('trimStart').value.trim());
+  const end = parseTime($('trimEnd').value.trim());
+  if (start == null || end == null || end <= start) return undefined;
+  return {start, end};
 }
 
 $('previewBtn').onclick = async () => {
@@ -266,12 +312,14 @@ function renderResults(items) {
 $('dlBtn').onclick = async () => {
   hideError();
   const quality = qualityValue('q');
+  const trim = trimValue();
+  if (trim === undefined) { showError('Invalid trim range (use mm:ss or seconds)'); return; }
   $('dlBtn').disabled = true;
   $('progressWrap').style.display = 'block';
   try {
     const r = await fetch('/api/download', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({url: $('url').value.trim(), quality, cover: $('coverChk').checked})
+      body: JSON.stringify({url: $('url').value.trim(), quality, cover: $('coverChk').checked, ...(trim ? {trim} : {})})
     });
     if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
     const {id} = await r.json();
@@ -303,6 +351,8 @@ $('dlBtn').onclick = async () => {
 $('resetBtn').onclick = () => {
   $('url').value = ''; previewInfo = null;
   ['preview','quality','actions','progressWrap','save','results'].forEach(id => $(id).style.display = 'none');
+  $('trimRow').style.display = 'none'; $('trimAudio').style.display = 'none';
+  $('trimChk').checked = false; $('trimStart').value = ''; $('trimEnd').value = '';
   $('bar').style.width = '0%'; hideError();
 };
 

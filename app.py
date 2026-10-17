@@ -65,6 +65,8 @@ class Job:
     title: str = ""
     filepath: str | None = None
     cover_path: str | None = None
+    trim_start: float | None = None
+    trim_end: float | None = None
     error: str | None = None
     created_at: float = field(default_factory=lambda: __import__("time").time())
 
@@ -92,11 +94,22 @@ class PreviewRequest(BaseModel):
     url: str
 
 
+class TrimRange(BaseModel):
+    start: float
+    end: float
+
+
 class DownloadRequest(BaseModel):
     url: str
     quality: str = "opus"
     cover: bool = False
     entries: list[str] | None = None
+    trim: TrimRange | None = None
+
+
+class TrimPreviewRequest(BaseModel):
+    url: str
+    trim: TrimRange
 
 
 def base_ydl_opts() -> dict:
@@ -185,6 +198,67 @@ def extract_cover(job: Job, info: dict) -> str | None:
     return None
 
 
+def cut_file(path: str, start: float, end: float) -> None:
+    src = Path(path)
+    tmp = src.with_name(src.stem + ".cut" + src.suffix)
+    r = subprocess.run(
+        [shutil.which("ffmpeg"), "-y", "-loglevel", "error",
+         "-ss", str(start), "-to", str(end), "-i", str(src), "-c", "copy", str(tmp)],
+        capture_output=True, text=True,
+    )
+    if r.returncode != 0 or not tmp.exists():
+        raise RuntimeError(f"trim failed: {r.stderr.strip()[:200]}")
+    tmp.replace(src)
+
+
+trim_previews: dict[str, str] = {}
+
+
+@app.post("/api/trim-preview")
+def trim_preview(req: TrimPreviewRequest):
+    if req.trim.start < 0 or req.trim.end <= req.trim.start:
+        raise HTTPException(status_code=422, detail="invalid trim range")
+    if not shutil.which("ffmpeg"):
+        raise HTTPException(status_code=500, detail="ffmpeg not found on PATH")
+    pid = uuid.uuid4().hex[:12]
+    for old in trim_previews.values():
+        Path(old).unlink(missing_ok=True)
+    trim_previews.clear()
+    opts = base_ydl_opts()
+    opts.update(
+        {
+            "format": "bestaudio/best",
+            "paths": {"home": str(DOWNLOADS_DIR)},
+            "outtmpl": f".preview_{pid}.%(ext)s",
+            "postprocessors": [
+                {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "0"}
+            ],
+        }
+    )
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(req.url, download=True)
+        if info.get("_type") == "playlist" and info.get("entries"):
+            info = info["entries"][0]
+        requested = info.get("requested_downloads") or []
+        path = requested[0].get("filepath") if requested else None
+        if not path or not Path(path).exists():
+            raise HTTPException(status_code=422, detail="could not download preview source")
+        cut_file(path, req.trim.start, req.trim.end)
+        trim_previews[pid] = path
+        return {"id": pid, "duration": req.trim.end - req.trim.start}
+    except yt_dlp.utils.DownloadError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
+@app.get("/api/trim/{preview_id}")
+def get_trim(preview_id: str):
+    path = trim_previews.get(preview_id)
+    if not path or not Path(path).exists():
+        raise HTTPException(status_code=404, detail="preview not found")
+    return FileResponse(path, media_type="audio/mpeg")
+
+
 def run_job(job: Job):
     try:
         with yt_dlp.YoutubeDL(build_download_opts(job)) as ydl:
@@ -199,8 +273,15 @@ def run_job(job: Job):
         job.status = "done" if job.filepath else "error"
         if not job.filepath:
             job.error = "download finished but output file not found"
-        elif job.cover:
-            job.cover_path = extract_cover(job, info)
+        else:
+            if job.trim_start is not None and job.trim_end is not None:
+                try:
+                    cut_file(job.filepath, job.trim_start, job.trim_end)
+                except RuntimeError as e:
+                    job.error = str(e)
+                    job.status = "error"
+            if job.cover and job.status == "done":
+                job.cover_path = extract_cover(job, info)
     except yt_dlp.utils.DownloadError as e:
         job.error = str(e)
         job.status = "error"
@@ -273,7 +354,14 @@ def start_download(req: DownloadRequest):
     job_ids = []
     with jobs_lock:
         for url in urls:
-            job = Job(id=uuid.uuid4().hex[:12], url=url, quality=req.quality, cover=req.cover)
+            job = Job(
+                id=uuid.uuid4().hex[:12],
+                url=url,
+                quality=req.quality,
+                cover=req.cover,
+                trim_start=req.trim.start if req.trim else None,
+                trim_end=req.trim.end if req.trim else None,
+            )
             jobs[job.id] = job
             job_ids.append(job.id)
         groups[group_id] = job_ids

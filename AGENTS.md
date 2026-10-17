@@ -28,7 +28,8 @@ PLAN.md              design rationale (read before changing quality/format logic
 
 - `GET /api/health` — yt-dlp version, ffmpeg present, detected JS runtimes
 - `POST /api/preview` `{url}` → `{type:"video",...}` or `{type:"playlist", entries:[{id,title,duration,thumbnail,url}]}` (flat extraction — fast)
-- `POST /api/download` `{url, quality, cover, entries?}` → `{id, group}` (single) or `{group, total}` (playlist). `entries` = list of selected video URLs; creates one job per entry, tracked together under `group`. `cover: true` writes `<song>.png` for every job in the group
+- `POST /api/download` `{url, quality, cover, entries?, trim?}` → `{id, group}` (single) or `{group, total}` (playlist). `entries` = list of selected video URLs; creates one job per entry, tracked together under `group`. `cover: true` writes `<song>.png` for every job in the group. `trim: {start, end}` (seconds) cuts the finished file losslessly
+- `POST /api/trim-preview` `{url, trim}` → `{id}` — downloads full track as temp mp3, cuts range, serves at `GET /api/trim/{id}` (for the `<audio>` preview)
 - `GET /api/job/{id}` — snapshot; `GET /api/job/{id}/events` — SSE stream
 - `GET /api/group/{id}/events` — SSE aggregate: `{total, done, failed, progress, finished, items:[snapshots]}`; blocks until the whole group finishes
 - `GET /api/file/{id}` — serves finished file; `GET /api/file/{id}/cover` — serves extracted cover
@@ -53,6 +54,7 @@ PLAN.md              design rationale (read before changing quality/format logic
 9. Cover extraction (`extract_cover`): embedded art via `ffmpeg -map 0:v:0 -frames:v 1 out.png` works for opus/m4a/mp3; webm falls back to thumbnail download + convert.
 10. Playlist preview uses `"extract_flat": "in_playlist"` (fast, no per-video extraction). Flat entries carry `url`/`id`/`title`/`duration`/`thumbnails` but are NOT downloadable as-is — download = one job per entry `url` with `noplaylist: True`, grouped via `groups[group_id] = [job_ids]`.
 11. SSE endpoints stream until the job/group finishes — a plain HTTP GET blocks for the whole duration (that is by design; the browser uses EventSource).
+12. yt-dlp `--download-sections`/`download_ranges` produces EMPTY files on YouTube (DASH) — do not use it. Trim = full download + `ffmpeg -ss S -to E -c copy` (frame-accurate for audio, lossless for opus). Temp file for the cut must keep a real extension (`.name.cut.opus`, not `.name.opus.cut`) or ffmpeg cannot choose an output format.
 
 ## Conventions
 

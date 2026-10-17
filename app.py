@@ -81,6 +81,7 @@ class Job:
 
 
 jobs: dict[str, Job] = {}
+groups: dict[str, list[str]] = {}
 jobs_lock = threading.Lock()
 executor = ThreadPoolExecutor(max_workers=int(CONFIG["max_concurrent"]))
 
@@ -95,6 +96,7 @@ class DownloadRequest(BaseModel):
     url: str
     quality: str = "opus"
     cover: bool = False
+    entries: list[str] | None = None
 
 
 def base_ydl_opts() -> dict:
@@ -219,14 +221,37 @@ def health():
 
 @app.post("/api/preview")
 def preview(req: PreviewRequest):
+    opts = base_ydl_opts()
+    opts["extract_flat"] = "in_playlist"
     try:
-        with yt_dlp.YoutubeDL(base_ydl_opts()) as ydl:
+        with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(req.url, download=False)
     except yt_dlp.utils.DownloadError as e:
         raise HTTPException(status_code=422, detail=str(e))
-    if info.get("_type") == "playlist" and info.get("entries"):
-        info = info["entries"][0]
+    if info.get("_type") == "playlist":
+        entries = []
+        for e in info.get("entries") or []:
+            if not e:
+                continue
+            thumbs = [t for t in e.get("thumbnails") or [] if t.get("url")]
+            entries.append(
+                {
+                    "id": e.get("id"),
+                    "title": e.get("title"),
+                    "duration": e.get("duration"),
+                    "thumbnail": thumbs[-1]["url"] if thumbs else None,
+                    "url": e.get("url") or e.get("webpage_url"),
+                }
+            )
+        return {
+            "type": "playlist",
+            "title": info.get("title"),
+            "uploader": info.get("uploader"),
+            "count": len(entries),
+            "entries": entries,
+        }
     return {
+        "type": "video",
         "id": info.get("id"),
         "title": info.get("title"),
         "uploader": info.get("uploader"),
@@ -241,11 +266,53 @@ def start_download(req: DownloadRequest):
         raise HTTPException(status_code=422, detail=f"unknown quality: {req.quality}")
     if not shutil.which("ffmpeg") and req.quality in ("opus", "m4a", "mp3"):
         raise HTTPException(status_code=500, detail="ffmpeg not found on PATH")
-    job = Job(id=uuid.uuid4().hex[:12], url=req.url, quality=req.quality, cover=req.cover)
+    urls = req.entries if req.entries else [req.url]
+    if not urls:
+        raise HTTPException(status_code=422, detail="no entries selected")
+    group_id = uuid.uuid4().hex[:12]
+    job_ids = []
     with jobs_lock:
-        jobs[job.id] = job
-    executor.submit(run_job, job)
-    return {"id": job.id}
+        for url in urls:
+            job = Job(id=uuid.uuid4().hex[:12], url=url, quality=req.quality, cover=req.cover)
+            jobs[job.id] = job
+            job_ids.append(job.id)
+        groups[group_id] = job_ids
+    for job_id in job_ids:
+        executor.submit(run_job, jobs[job_id])
+    if len(urls) == 1:
+        return {"id": job_ids[0], "group": group_id}
+    return {"group": group_id, "total": len(job_ids)}
+
+
+def group_snapshot(group_id: str) -> dict:
+    items = [jobs[jid].snapshot() for jid in groups[group_id]]
+    total = len(items)
+    done = sum(1 for it in items if it["status"] in ("done", "error"))
+    failed = sum(1 for it in items if it["status"] == "error")
+    overall = sum(it["progress"] for it in items) / total if total else 0
+    return {
+        "total": total,
+        "done": done,
+        "failed": failed,
+        "progress": round(overall, 1),
+        "finished": done == total,
+        "items": items,
+    }
+
+
+@app.get("/api/group/{group_id}/events")
+async def group_events(group_id: str):
+    if group_id not in groups:
+        raise HTTPException(status_code=404, detail="group not found")
+
+    async def stream():
+        while True:
+            yield f"data: {json.dumps(group_snapshot(group_id))}\n\n"
+            if group_snapshot(group_id)["finished"]:
+                break
+            await asyncio.sleep(0.5)
+
+    return StreamingResponse(stream(), media_type="text/event-stream")
 
 
 @app.get("/api/job/{job_id}")

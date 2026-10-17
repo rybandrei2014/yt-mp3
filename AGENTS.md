@@ -27,9 +27,10 @@ PLAN.md              design rationale (read before changing quality/format logic
 ## API
 
 - `GET /api/health` — yt-dlp version, ffmpeg present, detected JS runtimes
-- `POST /api/preview` `{url}` → title/uploader/duration/thumbnail
-- `POST /api/download` `{url, quality, cover}` → `{id}`; qualities: `opus` (default), `best`, `m4a`, `mp3`; `cover: true` also writes `<song>.png`
+- `POST /api/preview` `{url}` → `{type:"video",...}` or `{type:"playlist", entries:[{id,title,duration,thumbnail,url}]}` (flat extraction — fast)
+- `POST /api/download` `{url, quality, cover, entries?}` → `{id, group}` (single) or `{group, total}` (playlist). `entries` = list of selected video URLs; creates one job per entry, tracked together under `group`. `cover: true` writes `<song>.png` for every job in the group
 - `GET /api/job/{id}` — snapshot; `GET /api/job/{id}/events` — SSE stream
+- `GET /api/group/{id}/events` — SSE aggregate: `{total, done, failed, progress, finished, items:[snapshots]}`; blocks until the whole group finishes
 - `GET /api/file/{id}` — serves finished file; `GET /api/file/{id}/cover` — serves extracted cover
 
 ## Quality model (do not regress)
@@ -50,6 +51,8 @@ PLAN.md              design rationale (read before changing quality/format logic
 7. `EmbedThumbnail` rejects `.webm` ("Supported filetypes...") — `best` quality must run with **no postprocessors**. Cover for `best` is produced by `extract_cover()` fallback (downloads a thumbnail URL).
 8. yt-dlp's `info["thumbnails"]` URLs can 404 (e.g. `maxresdefault`) — try in reverse order until one downloads.
 9. Cover extraction (`extract_cover`): embedded art via `ffmpeg -map 0:v:0 -frames:v 1 out.png` works for opus/m4a/mp3; webm falls back to thumbnail download + convert.
+10. Playlist preview uses `"extract_flat": "in_playlist"` (fast, no per-video extraction). Flat entries carry `url`/`id`/`title`/`duration`/`thumbnails` but are NOT downloadable as-is — download = one job per entry `url` with `noplaylist: True`, grouped via `groups[group_id] = [job_ids]`.
+11. SSE endpoints stream until the job/group finishes — a plain HTTP GET blocks for the whole duration (that is by design; the browser uses EventSource).
 
 ## Conventions
 
@@ -72,7 +75,7 @@ Restart server after edits (no reload): kill the `python.exe` whose CommandLine 
 
 ## Roadmap (from PLAN.md, not yet built)
 
-Playlist/channel bulk + `--download-archive`, trim (`--download-sections`), search input (`ytsearch1:`), Docker packaging.
+`--download-archive` (skip already-downloaded), trim (`--download-sections`), search input (`ytsearch1:`), Docker packaging. (Playlist bulk is done.)
 
 ## Legal
 

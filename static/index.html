@@ -25,16 +25,17 @@
   }
   button:disabled { opacity: .4; cursor: default; }
   button.ghost { background: #232833; }
+  button.small { padding: 8px 12px; font-size: .85rem; }
   #preview { display: none; margin-top: 20px; gap: 14px; align-items: center; }
   #preview img { width: 168px; border-radius: 8px; }
   #preview .meta { font-size: .9rem; color: #aab0ba; }
   #preview .title { font-size: 1.05rem; color: #e6e6e6; margin-bottom: 6px; }
   #quality { display: none; margin-top: 20px; }
-  #quality label {
+  .qlabel {
     display: block; padding: 10px 12px; margin-bottom: 6px; border-radius: 8px;
     background: #171a21; border: 1px solid #2a2f3a; cursor: pointer; font-size: .95rem;
   }
-  #quality label:has(input:checked) { border-color: #e0393e; }
+  .qlabel:has(input:checked) { border-color: #e0393e; }
   #actions { display: none; margin-top: 16px; gap: 8px; }
   #progressWrap { display: none; margin-top: 20px; }
   .bar { height: 8px; border-radius: 4px; background: #232833; overflow: hidden; }
@@ -43,13 +44,40 @@
   #error { display: none; margin-top: 16px; padding: 10px 12px; border-radius: 8px;
     background: #3a1d20; color: #f0a0a4; font-size: .9rem; word-break: break-word; }
   #save { display: none; margin-top: 16px; }
-  #save a { color: #7ec8ff; }
+  #results { display: none; margin-top: 16px; font-size: .9rem; }
+  #results div { padding: 6px 0; border-bottom: 1px solid #1c2029; }
+  #results a { color: #7ec8ff; }
+  #results .fail { color: #f0a0a4; }
+  /* modal */
+  #modal {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,.65);
+    z-index: 10; justify-content: center; align-items: center; padding: 20px;
+  }
+  .modal-box {
+    background: #171a21; border: 1px solid #2a2f3a; border-radius: 12px;
+    width: 100%; max-width: 560px; max-height: 85vh; display: flex; flex-direction: column;
+    padding: 20px;
+  }
+  .modal-box h2 { margin: 0 0 4px; font-size: 1.15rem; }
+  .modal-box .sub { margin-bottom: 12px; }
+  #plList { overflow-y: auto; flex: 1; margin: 10px 0; }
+  .entry {
+    display: flex; align-items: center; gap: 10px; padding: 8px 10px;
+    border-radius: 8px; cursor: pointer; border: 1px solid transparent;
+  }
+  .entry:hover { background: #1d222c; }
+  .entry:has(input:checked) { border-color: #3a4150; }
+  .entry img { width: 96px; border-radius: 4px; }
+  .entry .t { font-size: .9rem; flex: 1; }
+  .entry .d { font-size: .8rem; color: #8a8f98; white-space: nowrap; }
+  .modal-actions { display: flex; gap: 8px; margin-top: 12px; }
+  .modal-actions .spacer { flex: 1; }
 </style>
 </head>
 <body>
 <main>
   <h1>yt-mp3</h1>
-  <div class="sub">Best-quality audio from any YouTube video — no re-encode by default.</div>
+  <div class="sub">Best-quality audio from any YouTube video or playlist — no re-encode by default.</div>
 
   <div class="row">
     <input id="url" type="url" placeholder="Paste YouTube URL..." autofocus>
@@ -65,11 +93,11 @@
   </div>
 
   <div id="quality">
-    <label><input type="radio" name="q" value="opus" checked> Opus (.opus, lossless remux — recommended)</label>
-    <label><input type="radio" name="q" value="best"> Original stream (.webm, zero processing)</label>
-    <label><input type="radio" name="q" value="m4a"> M4A (AAC, compatible)</label>
-    <label><input type="radio" name="q" value="mp3"> MP3 (VBR highest, compatible)</label>
-    <label><input type="checkbox" id="coverChk"> Save cover art as separate .png file</label>
+    <label class="qlabel"><input type="radio" name="q" value="opus" checked> Opus (.opus, lossless remux — recommended)</label>
+    <label class="qlabel"><input type="radio" name="q" value="best"> Original stream (.webm, zero processing)</label>
+    <label class="qlabel"><input type="radio" name="q" value="m4a"> M4A (AAC, compatible)</label>
+    <label class="qlabel"><input type="radio" name="q" value="mp3"> MP3 (VBR highest, compatible)</label>
+    <label class="qlabel"><input type="checkbox" id="coverChk"> Save cover art as separate .png file</label>
   </div>
 
   <div class="row" id="actions">
@@ -83,14 +111,43 @@
   </div>
 
   <div id="error"></div>
-
   <div id="save">Saved: <a id="saveLink" href="#"></a></div>
-  <div id="coverSave" style="display:none">Cover: <a id="coverLink" href="#"></a></div>
+  <div id="results"></div>
 </main>
+
+<div id="modal">
+  <div class="modal-box">
+    <h2 id="plTitle"></h2>
+    <div class="sub" id="plMeta"></div>
+    <div class="row">
+      <button class="ghost small" id="selAll">Select all</button>
+      <button class="ghost small" id="selNone">Select none</button>
+    </div>
+    <div id="plList"></div>
+    <div>
+      <label class="qlabel"><input type="checkbox" id="plCoverChk"> Save cover art as separate .png file (for all)</label>
+    </div>
+    <div class="modal-actions">
+      <button id="plDlBtn">Download</button>
+      <div class="spacer"></div>
+      <button class="ghost" id="plCancel">Cancel</button>
+    </div>
+  </div>
+</div>
 
 <script>
 const $ = id => document.getElementById(id);
 let previewInfo = null;
+
+function fmtDur(s) {
+  if (!s) return '';
+  const m = Math.floor(s / 60), sec = String(s % 60).padStart(2, '0');
+  return `${m}:${sec}`;
+}
+function qualityValue(prefix) {
+  const checked = document.querySelector(`input[name=${prefix}q]:checked`);
+  return checked ? checked.value : 'opus';
+}
 
 $('previewBtn').onclick = async () => {
   hideError();
@@ -104,21 +161,111 @@ $('previewBtn').onclick = async () => {
     });
     if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
     previewInfo = await r.json();
-    $('thumb').src = previewInfo.thumbnail;
-    $('pTitle').textContent = previewInfo.title;
-    const m = Math.floor((previewInfo.duration || 0) / 60);
-    const s = String((previewInfo.duration || 0) % 60).padStart(2, '0');
-    $('pMeta').textContent = `${previewInfo.uploader || ''} · ${m}:${s}`;
-    $('preview').style.display = 'flex';
-    $('quality').style.display = 'block';
-    $('actions').style.display = 'flex';
+    if (previewInfo.type === 'playlist') openPlaylistModal(previewInfo);
+    else openSingle(previewInfo);
   } catch (e) { showError(e.message); }
   finally { $('previewBtn').disabled = false; }
 };
 
+function openSingle(info) {
+  $('thumb').src = info.thumbnail;
+  $('pTitle').textContent = info.title;
+  $('pMeta').textContent = `${info.uploader || ''} · ${fmtDur(info.duration)}`;
+  $('preview').style.display = 'flex';
+  $('quality').style.display = 'block';
+  $('actions').style.display = 'flex';
+}
+
+function openPlaylistModal(info) {
+  $('plTitle').textContent = info.title || 'Playlist';
+  $('plMeta').textContent = `${info.count} videos${info.uploader ? ' · ' + info.uploader : ''}`;
+  const list = $('plList');
+  list.innerHTML = '';
+  for (const e of info.entries) {
+    const label = document.createElement('label');
+    label.className = 'entry';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox'; cb.checked = true; cb.dataset.url = e.url;
+    const img = document.createElement('img');
+    if (e.thumbnail) img.src = e.thumbnail; else img.style.visibility = 'hidden';
+    const t = document.createElement('div'); t.className = 't'; t.textContent = e.title;
+    const d = document.createElement('div'); d.className = 'd'; d.textContent = fmtDur(e.duration);
+    label.append(cb, img, t, d);
+    list.appendChild(label);
+  }
+  updatePlDlCount();
+  $('modal').style.display = 'flex';
+}
+
+function selectedUrls() {
+  return [...document.querySelectorAll('#plList input:checked')].map(cb => cb.dataset.url);
+}
+function updatePlDlCount() {
+  $('plDlBtn').textContent = `Download (${selectedUrls().length})`;
+}
+$('plList').addEventListener('change', updatePlDlCount);
+$('selAll').onclick = () => { document.querySelectorAll('#plList input').forEach(cb => cb.checked = true); updatePlDlCount(); };
+$('selNone').onclick = () => { document.querySelectorAll('#plList input').forEach(cb => cb.checked = false); updatePlDlCount(); };
+$('plCancel').onclick = () => { $('modal').style.display = 'none'; };
+
+$('plDlBtn').onclick = async () => {
+  hideError();
+  const urls = selectedUrls();
+  if (!urls.length) return;
+  $('plDlBtn').disabled = true;
+  $('modal').style.display = 'none';
+  $('progressWrap').style.display = 'block';
+  try {
+    const r = await fetch('/api/download', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({url: $('url').value.trim(), quality: qualityValue('q'), cover: $('plCoverChk').checked, entries: urls})
+    });
+    if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
+    const res = await r.json();
+    watchGroup(res.group);
+  } catch (e) { showError(e.message); $('plDlBtn').disabled = false; }
+};
+
+function watchGroup(groupId) {
+  const es = new EventSource(`/api/group/${groupId}/events`);
+  es.onmessage = ev => {
+    const g = JSON.parse(ev.data);
+    $('bar').style.width = g.progress + '%';
+    $('status').textContent = `${g.done}/${g.total} done` + (g.failed ? ` · ${g.failed} failed` : '');
+    if (g.finished) {
+      es.close();
+      renderResults(g.items);
+      $('plDlBtn').disabled = false;
+    }
+  };
+}
+
+function renderResults(items) {
+  const box = $('results');
+  box.innerHTML = '';
+  for (const it of items) {
+    const div = document.createElement('div');
+    if (it.status === 'done' && it.filename) {
+      const a = document.createElement('a');
+      a.href = `/api/file/${it.id}`; a.textContent = it.filename;
+      div.append('✓ ', a);
+      if (it.cover_filename) {
+        const c = document.createElement('a');
+        c.href = `/api/file/${it.id}/cover`; c.textContent = ' ' + it.cover_filename;
+        div.append(' + ', c);
+      }
+    } else {
+      div.className = 'fail';
+      div.textContent = `✗ ${it.title || it.id} — ${it.error || 'failed'}`;
+    }
+    box.appendChild(div);
+  }
+  box.style.display = 'block';
+}
+
 $('dlBtn').onclick = async () => {
   hideError();
-  const quality = document.querySelector('input[name=q]:checked').value;
+  const quality = qualityValue('q');
   $('dlBtn').disabled = true;
   $('progressWrap').style.display = 'block';
   try {
@@ -139,9 +286,9 @@ $('dlBtn').onclick = async () => {
         $('saveLink').textContent = j.filename;
         $('save').style.display = 'block';
         if (j.cover_filename) {
-          $('coverLink').href = `/api/file/${j.id}/cover`;
-          $('coverLink').textContent = j.cover_filename;
-          $('coverSave').style.display = 'block';
+          const c = document.createElement('a');
+          c.href = `/api/file/${j.id}/cover`; c.textContent = ' + ' + j.cover_filename;
+          $('save').append(c);
         }
         $('dlBtn').disabled = false;
       } else if (j.status === 'error') {
@@ -155,7 +302,7 @@ $('dlBtn').onclick = async () => {
 
 $('resetBtn').onclick = () => {
   $('url').value = ''; previewInfo = null;
-  ['preview','quality','actions','progressWrap','save','coverSave'].forEach(id => $(id).style.display = 'none');
+  ['preview','quality','actions','progressWrap','save','results'].forEach(id => $(id).style.display = 'none');
   $('bar').style.width = '0%'; hideError();
 };
 

@@ -478,8 +478,14 @@ function computePeaks(n) {
   }
   trim.peaks = peaks;
 }
+function tickInterval(duration) {
+  const candidates = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600];
+  for (const c of candidates) if (duration / c <= 12) return c;
+  return 1200;
+}
 function drawWave() {
-  const W = canvas.width, H = canvas.height, dpr = window.devicePixelRatio || 1, mid = H / 2;
+  const W = canvas.width, H = canvas.height, dpr = window.devicePixelRatio || 1;
+  const rulerH = 22 * dpr, waveH = H - rulerH, mid = waveH / 2;
   cctx.clearRect(0, 0, W, H);
   if (!trim.peaks) return;
   const n = trim.peaks.length;
@@ -487,22 +493,34 @@ function drawWave() {
   const bw = Math.max(1, W / n);
   for (let i = 0; i < n; i++) {
     const [min, max] = trim.peaks[i];
-    cctx.fillStyle = (i * W / n >= sx && i * W / n <= ex) ? '#e0393e' : '#3a4150';
+    const x = i * W / n;
+    cctx.fillStyle = (x >= sx && x <= ex) ? '#0a87ff' : '#48484a';
     const y1 = mid + min * mid * 0.9, y2 = mid + max * mid * 0.9;
-    cctx.fillRect(i * W / n, y2, bw, Math.max(1, y1 - y2));
+    cctx.fillRect(x, y2, bw, Math.max(1, y1 - y2));
   }
-  cctx.fillStyle = 'rgba(15,17,21,.55)';
-  cctx.fillRect(0, 0, sx, H);
-  cctx.fillRect(ex, 0, W - ex, H);
+  // time ruler
+  const iv = tickInterval(trim.duration);
+  cctx.fillStyle = '#8a8f98';
+  cctx.font = `${11 * dpr}px system-ui`;
+  cctx.textBaseline = 'top';
+  for (let t = 0; t <= trim.duration; t += iv) {
+    const x = t / trim.duration * W;
+    cctx.fillRect(x, waveH, 1 * dpr, 4 * dpr);
+    const label = fmtDur(t);
+    const lx = Math.min(Math.max(x, 2 * dpr), W - label.length * 6.5 * dpr);
+    cctx.fillText(label, lx, waveH + 6 * dpr);
+  }
+  // boundary handles
   for (const x of [sx, ex]) {
     cctx.fillStyle = '#e0393e';
-    cctx.fillRect(x - dpr, 0, 2 * dpr, H);
-    cctx.beginPath(); cctx.arc(x, mid, 7 * dpr, 0, Math.PI * 2); cctx.fill();
+    cctx.fillRect(x - dpr, 0, 2 * dpr, waveH);
+    cctx.fillRect(x - 5 * dpr, 0, 10 * dpr, 5 * dpr);
+    cctx.fillRect(x - 5 * dpr, waveH - 5 * dpr, 10 * dpr, 5 * dpr);
   }
   if (playhead != null) {
     const px = playhead / trim.duration * W;
     cctx.fillStyle = '#ffffff';
-    cctx.fillRect(px - dpr, 0, 2 * dpr, H);
+    cctx.fillRect(px - dpr, 0, 2 * dpr, waveH);
     cctx.beginPath(); cctx.arc(px, 7 * dpr, 5 * dpr, 0, Math.PI * 2); cctx.fill();
   }
 }

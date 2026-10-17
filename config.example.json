@@ -1,0 +1,5 @@
+{
+  "browser": "firefox",
+  "max_concurrent": 2,
+  "port": 8000
+}

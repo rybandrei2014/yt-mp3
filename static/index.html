@@ -69,6 +69,7 @@
     <label><input type="radio" name="q" value="best"> Original stream (.webm, zero processing)</label>
     <label><input type="radio" name="q" value="m4a"> M4A (AAC, compatible)</label>
     <label><input type="radio" name="q" value="mp3"> MP3 (VBR highest, compatible)</label>
+    <label><input type="checkbox" id="coverChk"> Save cover art as separate .png file</label>
   </div>
 
   <div class="row" id="actions">
@@ -84,6 +85,7 @@
   <div id="error"></div>
 
   <div id="save">Saved: <a id="saveLink" href="#"></a></div>
+  <div id="coverSave" style="display:none">Cover: <a id="coverLink" href="#"></a></div>
 </main>
 
 <script>
@@ -122,7 +124,7 @@ $('dlBtn').onclick = async () => {
   try {
     const r = await fetch('/api/download', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({url: $('url').value.trim(), quality})
+      body: JSON.stringify({url: $('url').value.trim(), quality, cover: $('coverChk').checked})
     });
     if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
     const {id} = await r.json();
@@ -136,6 +138,11 @@ $('dlBtn').onclick = async () => {
         $('saveLink').href = `/api/file/${j.id}`;
         $('saveLink').textContent = j.filename;
         $('save').style.display = 'block';
+        if (j.cover_filename) {
+          $('coverLink').href = `/api/file/${j.id}/cover`;
+          $('coverLink').textContent = j.cover_filename;
+          $('coverSave').style.display = 'block';
+        }
         $('dlBtn').disabled = false;
       } else if (j.status === 'error') {
         es.close();
@@ -148,7 +155,7 @@ $('dlBtn').onclick = async () => {
 
 $('resetBtn').onclick = () => {
   $('url').value = ''; previewInfo = null;
-  ['preview','quality','actions','progressWrap','save'].forEach(id => $(id).style.display = 'none');
+  ['preview','quality','actions','progressWrap','save','coverSave'].forEach(id => $(id).style.display = 'none');
   $('bar').style.width = '0%'; hideError();
 };
 

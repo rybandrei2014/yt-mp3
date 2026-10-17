@@ -28,9 +28,9 @@ PLAN.md              design rationale (read before changing quality/format logic
 
 - `GET /api/health` — yt-dlp version, ffmpeg present, detected JS runtimes
 - `POST /api/preview` `{url}` → title/uploader/duration/thumbnail
-- `POST /api/download` `{url, quality}` → `{id}`; qualities: `opus` (default), `best`, `m4a`, `mp3`
+- `POST /api/download` `{url, quality, cover}` → `{id}`; qualities: `opus` (default), `best`, `m4a`, `mp3`; `cover: true` also writes `<song>.png`
 - `GET /api/job/{id}` — snapshot; `GET /api/job/{id}/events` — SSE stream
-- `GET /api/file/{id}` — serves finished file
+- `GET /api/file/{id}` — serves finished file; `GET /api/file/{id}/cover` — serves extracted cover
 
 ## Quality model (do not regress)
 
@@ -47,6 +47,9 @@ PLAN.md              design rationale (read before changing quality/format logic
 4. The Python API does **not** auto-enable thumbnail writing (CLI's `--embed-thumbnail` does). Set `"writethumbnail": True` or EmbedThumbnail logs "There are no thumbnails on disk".
 5. Playlists: `extract_info` may return `{"_type": "playlist", "entries": [...]}` — unwrap first entry.
 6. YouTube breaks extractors monthly: keep `--pre` (nightly) yt-dlp; `requirements.lock` pins a nightly.
+7. `EmbedThumbnail` rejects `.webm` ("Supported filetypes...") — `best` quality must run with **no postprocessors**. Cover for `best` is produced by `extract_cover()` fallback (downloads a thumbnail URL).
+8. yt-dlp's `info["thumbnails"]` URLs can 404 (e.g. `maxresdefault`) — try in reverse order until one downloads.
+9. Cover extraction (`extract_cover`): embedded art via `ffmpeg -map 0:v:0 -frames:v 1 out.png` works for opus/m4a/mp3; webm falls back to thumbnail download + convert.
 
 ## Conventions
 

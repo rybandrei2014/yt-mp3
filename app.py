@@ -1,7 +1,9 @@
 import asyncio
 import json
 import shutil
+import subprocess
 import threading
+import urllib.request
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -57,10 +59,12 @@ class Job:
     id: str
     url: str
     quality: str
+    cover: bool = False
     status: str = "queued"
     progress: float = 0.0
     title: str = ""
     filepath: str | None = None
+    cover_path: str | None = None
     error: str | None = None
     created_at: float = field(default_factory=lambda: __import__("time").time())
 
@@ -72,6 +76,7 @@ class Job:
             "title": self.title,
             "error": self.error,
             "filename": Path(self.filepath).name if self.filepath else None,
+            "cover_filename": Path(self.cover_path).name if self.cover_path else None,
         }
 
 
@@ -89,6 +94,7 @@ class PreviewRequest(BaseModel):
 class DownloadRequest(BaseModel):
     url: str
     quality: str = "opus"
+    cover: bool = False
 
 
 def base_ydl_opts() -> dict:
@@ -110,21 +116,22 @@ def build_download_opts(job: Job) -> dict:
             "format": "bestaudio[acodec^=opus]/bestaudio/best",
             "paths": {"home": str(DOWNLOADS_DIR)},
             "outtmpl": "%(uploader)s - %(title)s.%(ext)s",
-            "writethumbnail": True,
             "progress_hooks": [make_progress_hook(job)],
         }
     )
-    postprocessors = []
-    if job.quality in ("opus", "m4a", "mp3"):
-        postprocessors.append(
-            {
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": job.quality,
-                "preferredquality": "0",
-            }
-        )
-    postprocessors.append({"key": "FFmpegMetadata"})
-    postprocessors.append({"key": "EmbedThumbnail"})
+    if job.quality == "best":
+        opts["postprocessors"] = []
+        return opts
+    opts["writethumbnail"] = True
+    postprocessors = [
+        {
+            "key": "FFmpegExtractAudio",
+            "preferredcodec": job.quality,
+            "preferredquality": "0",
+        },
+        {"key": "FFmpegMetadata"},
+        {"key": "EmbedThumbnail"},
+    ]
     opts["postprocessors"] = postprocessors
     return opts
 
@@ -143,6 +150,39 @@ def make_progress_hook(job: Job):
     return hook
 
 
+def extract_cover(job: Job, info: dict) -> str | None:
+    path = Path(job.filepath)
+    cover = path.with_suffix(".png")
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        return None
+    r = subprocess.run(
+        [ffmpeg, "-y", "-loglevel", "error", "-i", str(path),
+         "-map", "0:v:0", "-frames:v", "1", str(cover)],
+        capture_output=True,
+    )
+    if r.returncode == 0 and cover.exists():
+        return str(cover)
+    cover.unlink(missing_ok=True)
+    thumbs = [t for t in info.get("thumbnails") or [] if t.get("url")]
+    tmp = DOWNLOADS_DIR / f".cover_{job.id}.img"
+    for thumb in reversed(thumbs):
+        try:
+            urllib.request.urlretrieve(thumb["url"], tmp)
+        except OSError:
+            continue
+        try:
+            r = subprocess.run(
+                [ffmpeg, "-y", "-loglevel", "error", "-i", str(tmp), str(cover)],
+                capture_output=True,
+            )
+            if r.returncode == 0 and cover.exists():
+                return str(cover)
+        finally:
+            tmp.unlink(missing_ok=True)
+    return None
+
+
 def run_job(job: Job):
     try:
         with yt_dlp.YoutubeDL(build_download_opts(job)) as ydl:
@@ -157,6 +197,8 @@ def run_job(job: Job):
         job.status = "done" if job.filepath else "error"
         if not job.filepath:
             job.error = "download finished but output file not found"
+        elif job.cover:
+            job.cover_path = extract_cover(job, info)
     except yt_dlp.utils.DownloadError as e:
         job.error = str(e)
         job.status = "error"
@@ -199,7 +241,7 @@ def start_download(req: DownloadRequest):
         raise HTTPException(status_code=422, detail=f"unknown quality: {req.quality}")
     if not shutil.which("ffmpeg") and req.quality in ("opus", "m4a", "mp3"):
         raise HTTPException(status_code=500, detail="ffmpeg not found on PATH")
-    job = Job(id=uuid.uuid4().hex[:12], url=req.url, quality=req.quality)
+    job = Job(id=uuid.uuid4().hex[:12], url=req.url, quality=req.quality, cover=req.cover)
     with jobs_lock:
         jobs[job.id] = job
     executor.submit(run_job, job)
@@ -236,6 +278,17 @@ def get_file(job_id: str):
     if not job or job.status != "done" or not job.filepath:
         raise HTTPException(status_code=404, detail="file not ready")
     path = Path(job.filepath)
+    if not path.exists():
+        raise HTTPException(status_code=410, detail="file expired")
+    return FileResponse(path, filename=path.name)
+
+
+@app.get("/api/file/{job_id}/cover")
+def get_cover(job_id: str):
+    job = jobs.get(job_id)
+    if not job or not job.cover_path:
+        raise HTTPException(status_code=404, detail="cover not available")
+    path = Path(job.cover_path)
     if not path.exists():
         raise HTTPException(status_code=410, detail="file expired")
     return FileResponse(path, filename=path.name)

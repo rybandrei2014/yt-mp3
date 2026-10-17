@@ -463,18 +463,18 @@ function sizeCanvas() {
 }
 function computePeaks(n) {
   const data = trim.buffer.getChannelData(0);
-  const block = Math.max(1, Math.floor(data.length / n));
-  const step = Math.max(1, Math.floor(block / 400));
-  const peaks = [];
+  const block = data.length / n;
+  const peaks = new Array(n);
   for (let i = 0; i < n; i++) {
     let min = 1, max = -1;
-    const off = i * block;
-    for (let j = 0; j < block && off + j < data.length; j += step) {
-      const v = data[off + j];
+    const start = Math.floor(i * block);
+    const end = Math.min(data.length, Math.floor((i + 1) * block));
+    for (let j = start; j < end; j++) {
+      const v = data[j];
       if (v < min) min = v;
       if (v > max) max = v;
     }
-    peaks.push([min === 1 ? 0 : min, max === -1 ? 0 : max]);
+    peaks[i] = [min === 1 ? 0 : min, max === -1 ? 0 : max];
   }
   trim.peaks = peaks;
 }
@@ -490,12 +490,12 @@ function drawWave() {
   if (!trim.peaks) return;
   const n = trim.peaks.length;
   const sx = trim.start / trim.duration * W, ex = trim.end / trim.duration * W;
-  const bw = Math.max(1, W / n);
+  const bw = Math.max(1, Math.ceil(W / n));
   for (let i = 0; i < n; i++) {
     const [min, max] = trim.peaks[i];
     const x = i * W / n;
-    cctx.fillStyle = (x >= sx && x <= ex) ? '#0a87ff' : '#48484a';
-    const y1 = mid + min * mid * 0.9, y2 = mid + max * mid * 0.9;
+    cctx.fillStyle = (x >= sx && x <= ex) ? '#a62424' : '#48484a';
+    const y1 = mid + min * mid * 0.95, y2 = mid + max * mid * 0.95;
     cctx.fillRect(x, y2, bw, Math.max(1, y1 - y2));
   }
   // time ruler

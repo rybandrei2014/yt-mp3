@@ -477,9 +477,15 @@ function computePeaks(n) {
       if (v < min) min = v;
       if (v > max) max = v;
     }
-    peaks[i] = [min === 1 ? 0 : min, max === -1 ? 0 : max];
+    if (min === 1) min = 0;
+    if (max === -1) max = 0;
+    peaks[i] = [min, max];
   }
   trim.peaks = peaks;
+}
+function fmtRuler(s) {
+  const m = Math.floor(s / 60), sec = String(Math.floor(s % 60)).padStart(2, '0');
+  return `${String(m).padStart(2, '0')}:${sec}`;
 }
 function tickInterval(duration) {
   const candidates = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600];
@@ -498,8 +504,8 @@ function drawWave() {
     const [min, max] = trim.peaks[i];
     const x = i * W / n;
     cctx.fillStyle = (x >= sx && x <= ex) ? '#a62424' : '#48484a';
-    const y1 = mid + min * mid * 0.95, y2 = mid + max * mid * 0.95;
-    cctx.fillRect(x, y2, bw, Math.max(1, y1 - y2));
+    const y1 = mid - max * mid * 0.98, y2 = mid - min * mid * 0.98;
+    cctx.fillRect(x, y1, bw, Math.max(1, y2 - y1));
   }
   // time ruler
   const iv = tickInterval(trim.duration);
@@ -509,16 +515,17 @@ function drawWave() {
   for (let t = 0; t <= trim.duration; t += iv) {
     const x = t / trim.duration * W;
     cctx.fillRect(x, waveH, 1 * dpr, 4 * dpr);
-    const label = fmtDur(t);
+    const label = fmtRuler(t);
     const lx = Math.min(Math.max(x, 2 * dpr), W - label.length * 6.5 * dpr);
     cctx.fillText(label, lx, waveH + 6 * dpr);
   }
-  // boundary handles
+  // selection boundary handles: bars with grip notch
+  const hw = Math.max(2, Math.round(3 * dpr));
   for (const x of [sx, ex]) {
     cctx.fillStyle = '#e0393e';
-    cctx.fillRect(x - dpr, 0, 2 * dpr, waveH);
-    cctx.fillRect(x - 5 * dpr, 0, 10 * dpr, 5 * dpr);
-    cctx.fillRect(x - 5 * dpr, waveH - 5 * dpr, 10 * dpr, 5 * dpr);
+    cctx.fillRect(x - hw / 2, 0, hw, waveH);
+    cctx.fillStyle = '#7e1f23';
+    cctx.fillRect(x - hw / 2, mid - 8 * dpr, hw, 16 * dpr);
   }
   if (playhead != null) {
     const px = playhead / trim.duration * W;

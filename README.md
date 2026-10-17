@@ -79,6 +79,10 @@ downloads/           output files (+ hidden .previews/ for trim waveforms)
 
 Flow: paste URL → `POST /api/preview` (flat extraction, also lists playlists) → pick quality → `POST /api/download` → live progress via SSE → file appears in **Library** → `✂ Trim` opens the waveform modal (full-quality decode, drag the selection, `▶` previews in-browser, `✂ Cut` writes a lossless copy).
 
+## License
+
+MIT — see [LICENSE](LICENSE). The code is yours to use and modify; how you use the tool is your responsibility. Bundled components (yt-dlp, ffmpeg, quickjs-ng) carry their own licenses.
+
 ## Legal
 
 Personal / localhost use only. Downloading may violate a site's ToS and copyright law in your jurisdiction — know your local rules. Public hosting of this tool is the risk area.

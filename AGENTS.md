@@ -18,7 +18,7 @@ Runtime deps on PATH: `ffmpeg` (required for opus/m4a/mp3), a JS runtime — `no
 ```
 app.py               FastAPI backend + yt-dlp Python API + in-process job manager
 static/index.html    single-page UI (vanilla JS, SSE progress)
-config.json          optional (see config.example.json): browser cookies, port, max_concurrent
+config.json          optional (see config.example.json): browser cookies, port, max_concurrent, download_dir
 requirements.txt     loose pins | requirements.lock frozen (regenerate: pip freeze > requirements.lock)
 downloads/           output files
 PLAN.md              design rationale (read before changing quality/format logic)
@@ -63,7 +63,7 @@ PLAN.md              design rationale (read before changing quality/format logic
 - Progress: yt-dlp `progress_hooks` mutate the `Job` dataclass; SSE endpoint polls `job.snapshot()` every 0.5s.
 - Cookies: only when `config.json` sets `"browser"` (e.g. `"firefox"`) → `cookiesfrombrowser`. Default is none (localhost + own IP usually works).
 - Temp hygiene: trim previews live in `downloads/.previews/` (hidden dir); `sweep_temp_files()` runs at startup and before each preview, deleting all previews + stray `*.part`/`*.ytdl`/`*.cut.*` in `downloads/`. Only the newest preview ever exists.
-- Keep everything relative to `BASE_DIR` (portability); no absolute paths.
+- Keep everything relative to `BASE_DIR` (portability); no absolute paths — EXCEPT `download_dir` in `config.json`, which may be absolute (e.g. `"G:\\yt-mp3"`) to keep downloads/previews off the app's drive. Relative values resolve against `BASE_DIR`.
 
 ## Verifying changes
 

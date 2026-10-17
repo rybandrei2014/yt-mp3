@@ -16,8 +16,29 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 BASE_DIR = Path(__file__).resolve().parent
-DOWNLOADS_DIR = BASE_DIR / "downloads"
-DOWNLOADS_DIR.mkdir(exist_ok=True)
+
+DEFAULT_CONFIG = {
+    "browser": None,
+    "max_concurrent": 2,
+    "port": 8000,
+    "download_dir": "downloads",
+}
+
+
+def load_config() -> dict:
+    cfg = dict(DEFAULT_CONFIG)
+    cfg_file = BASE_DIR / "config.json"
+    if cfg_file.exists():
+        cfg.update(json.loads(cfg_file.read_text(encoding="utf-8")))
+    return cfg
+
+
+CONFIG = load_config()
+
+DOWNLOADS_DIR = Path(CONFIG["download_dir"])
+if not DOWNLOADS_DIR.is_absolute():
+    DOWNLOADS_DIR = BASE_DIR / DOWNLOADS_DIR
+DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
 PREVIEW_DIR = DOWNLOADS_DIR / ".previews"
 
 
@@ -32,23 +53,6 @@ def sweep_temp_files():
 
 
 sweep_temp_files()
-
-DEFAULT_CONFIG = {
-    "browser": None,
-    "max_concurrent": 2,
-    "port": 8000,
-}
-
-
-def load_config() -> dict:
-    cfg = dict(DEFAULT_CONFIG)
-    cfg_file = BASE_DIR / "config.json"
-    if cfg_file.exists():
-        cfg.update(json.loads(cfg_file.read_text(encoding="utf-8")))
-    return cfg
-
-
-CONFIG = load_config()
 
 QUALITIES = {
     "opus": {"label": "Opus (.opus, lossless remux - recommended)", "ext": "opus"},

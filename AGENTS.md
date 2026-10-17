@@ -29,7 +29,7 @@ PLAN.md              design rationale (read before changing quality/format logic
 - `GET /api/health` — yt-dlp version, ffmpeg present, detected JS runtimes
 - `POST /api/preview` `{url}` → `{type:"video",...}` or `{type:"playlist", entries:[{id,title,duration,thumbnail,url}]}` (flat extraction — fast)
 - `POST /api/download` `{url, quality, cover, entries?, trim?}` → `{id, group}` (single) or `{group, total}` (playlist). `entries` = list of selected video URLs; creates one job per entry, tracked together under `group`. `cover: true` writes `<song>.png` for every job in the group. `trim: {start, end}` (seconds) cuts the finished file losslessly
-- `POST /api/trim-preview` `{url, trim}` → `{id}` — downloads full track as temp mp3, cuts range, serves at `GET /api/trim/{id}` (for the `<audio>` preview)
+- `POST /api/trim-preview` `{url, trim}` → `{id}` — downloads full track as temp mp3 at `worstaudio/worst` (low SSD/bandwidth strain), cuts range, serves at `GET /api/trim/{id}` (for the `<audio>` preview)
 - `GET /api/job/{id}` — snapshot; `GET /api/job/{id}/events` — SSE stream
 - `GET /api/group/{id}/events` — SSE aggregate: `{total, done, failed, progress, finished, items:[snapshots]}`; blocks until the whole group finishes
 - `GET /api/file/{id}` — serves finished file; `GET /api/file/{id}/cover` — serves extracted cover
@@ -61,6 +61,7 @@ PLAN.md              design rationale (read before changing quality/format logic
 - Python 3.10+ (yt-dlp deprecates 3.10 — bump venv when convenient), FastAPI, no DB: jobs live in an in-memory dict guarded by `jobs_lock`, downloads run in a `ThreadPoolExecutor(max_concurrent)`.
 - Progress: yt-dlp `progress_hooks` mutate the `Job` dataclass; SSE endpoint polls `job.snapshot()` every 0.5s.
 - Cookies: only when `config.json` sets `"browser"` (e.g. `"firefox"`) → `cookiesfrombrowser`. Default is none (localhost + own IP usually works).
+- Temp hygiene: trim previews live in `downloads/.previews/` (hidden dir); `sweep_temp_files()` runs at startup and before each preview, deleting all previews + stray `*.part`/`*.ytdl`/`*.cut.*` in `downloads/`. Only the newest preview ever exists.
 - Keep everything relative to `BASE_DIR` (portability); no absolute paths.
 
 ## Verifying changes

@@ -18,6 +18,20 @@ from pydantic import BaseModel
 BASE_DIR = Path(__file__).resolve().parent
 DOWNLOADS_DIR = BASE_DIR / "downloads"
 DOWNLOADS_DIR.mkdir(exist_ok=True)
+PREVIEW_DIR = DOWNLOADS_DIR / ".previews"
+
+
+def sweep_temp_files():
+    PREVIEW_DIR.mkdir(exist_ok=True)
+    for f in list(PREVIEW_DIR.iterdir()) + list(DOWNLOADS_DIR.glob(".preview_*")):
+        if f.is_file():
+            f.unlink(missing_ok=True)
+    for pattern in ("*.part", "*.ytdl", "*.cut.*"):
+        for f in DOWNLOADS_DIR.glob(pattern):
+            f.unlink(missing_ok=True)
+
+
+sweep_temp_files()
 
 DEFAULT_CONFIG = {
     "browser": None,
@@ -221,14 +235,13 @@ def trim_preview(req: TrimPreviewRequest):
     if not shutil.which("ffmpeg"):
         raise HTTPException(status_code=500, detail="ffmpeg not found on PATH")
     pid = uuid.uuid4().hex[:12]
-    for old in trim_previews.values():
-        Path(old).unlink(missing_ok=True)
+    sweep_temp_files()
     trim_previews.clear()
     opts = base_ydl_opts()
     opts.update(
         {
-            "format": "bestaudio/best",
-            "paths": {"home": str(DOWNLOADS_DIR)},
+            "format": "worstaudio/worst",
+            "paths": {"home": str(PREVIEW_DIR)},
             "outtmpl": f".preview_{pid}.%(ext)s",
             "postprocessors": [
                 {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "0"}

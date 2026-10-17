@@ -44,6 +44,19 @@
   #error { display: none; margin-top: 16px; padding: 10px 12px; border-radius: 8px;
     background: #3a1d20; color: #f0a0a4; font-size: .9rem; word-break: break-word; }
   #save { display: none; margin-top: 16px; }
+  #trimWidget { margin-top: 10px; }
+  #waveWrap { position: relative; background: #171a21; border: 1px solid #2a2f3a; border-radius: 8px; overflow: hidden; }
+  #wave { display: block; width: 100%; height: 120px; cursor: crosshair; touch-action: none; }
+  #waveMsg {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    color: #8a8f98; font-size: .9rem; pointer-events: none;
+  }
+  .trimTimes { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+  .trimTimes input {
+    width: 70px; padding: 8px 10px; border-radius: 8px; border: 1px solid #2a2f3a;
+    background: #171a21; color: #e6e6e6; font-size: .9rem; text-align: center;
+  }
+  .trimTimes .dash { color: #8a8f98; }
   #results { display: none; margin-top: 16px; font-size: .9rem; }
   #results div { padding: 6px 0; border-bottom: 1px solid #1c2029; }
   #results a { color: #7ec8ff; }
@@ -99,12 +112,19 @@
     <label class="qlabel"><input type="radio" name="q" value="mp3"> MP3 (VBR highest, compatible)</label>
     <label class="qlabel"><input type="checkbox" id="coverChk"> Save cover art as separate .png file</label>
     <label class="qlabel"><input type="checkbox" id="trimChk"> Trim (cut audio to a time range)</label>
-    <div id="trimRow" style="display:none" class="row">
-      <input id="trimStart" type="text" placeholder="start (0:30 or 90)" style="flex:1;padding:10px;border-radius:8px;border:1px solid #2a2f3a;background:#171a21;color:#e6e6e6">
-      <input id="trimEnd" type="text" placeholder="end (2:45 or 165)" style="flex:1;padding:10px;border-radius:8px;border:1px solid #2a2f3a;background:#171a21;color:#e6e6e6">
-      <button id="trimPreviewBtn" class="ghost small">Preview</button>
+    <div id="trimWidget" style="display:none">
+      <div id="waveWrap">
+        <canvas id="wave"></canvas>
+        <div id="waveMsg"></div>
+      </div>
+      <div class="trimTimes">
+        <input id="trimStart" type="text" value="0:00">
+        <span class="dash">–</span>
+        <input id="trimEnd" type="text" value="0:00">
+        <button id="trimPlayBtn" class="ghost small">▶ Preview</button>
+        <button id="trimStopBtn" class="ghost small" style="display:none">■ Stop</button>
+      </div>
     </div>
-    <audio id="trimAudio" controls style="display:none;width:100%;margin-top:10px"></audio>
   </div>
 
   <div class="row" id="actions">
@@ -163,36 +183,162 @@ function parseTime(s) {
   const [, a, b, c] = m;
   return c !== undefined ? +a * 3600 + +b * 60 + +c : +a * 60 + +b;
 }
+const trim = { start: 0, end: 0, duration: 0, peaks: null, buffer: null, loaded: false, loading: false };
+let audioCtx = null, playSource = null;
+const canvas = $('wave'), cctx = canvas.getContext('2d');
+
 $('trimChk').onchange = () => {
-  $('trimRow').style.display = $('trimChk').checked ? 'flex' : 'none';
+  const on = $('trimChk').checked;
+  $('trimWidget').style.display = on ? 'block' : 'none';
+  if (on && !trim.loaded && !trim.loading) loadWaveform();
+  if (!on) stopTrimPlay();
 };
-$('trimPreviewBtn').onclick = async () => {
-  hideError();
-  const start = parseTime($('trimStart').value.trim());
-  const end = parseTime($('trimEnd').value.trim());
-  if (start == null || end == null || end <= start) { showError('Invalid trim range (use mm:ss or seconds)'); return; }
-  $('trimPreviewBtn').disabled = true;
-  $('status').textContent = 'preparing preview...';
-  $('progressWrap').style.display = 'block';
+
+function setWaveMsg(m) { $('waveMsg').textContent = m; $('waveMsg').style.display = m ? 'flex' : 'none'; }
+
+async function loadWaveform() {
+  trim.loading = true;
+  setWaveMsg('loading waveform…');
   try {
     const r = await fetch('/api/trim-preview', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({url: $('url').value.trim(), trim: {start, end}})
+      body: JSON.stringify({url: $('url').value.trim()})
     });
     if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
-    const res = await r.json();
-    $('trimAudio').src = `/api/trim/${res.id}`;
-    $('trimAudio').style.display = 'block';
-    $('status').textContent = '';
-  } catch (e) { showError(e.message); $('status').textContent = ''; }
-  finally { $('trimPreviewBtn').disabled = false; }
+    const {id} = await r.json();
+    const ab = await (await fetch(`/api/trim/${id}`)).arrayBuffer();
+    audioCtx = audioCtx || new AudioContext();
+    trim.buffer = await audioCtx.decodeAudioData(ab);
+    trim.duration = trim.buffer.duration;
+    trim.start = 0; trim.end = trim.duration;
+    trim.loaded = true;
+    setWaveMsg('');
+    sizeCanvas(); drawWave(); syncTrimInputs();
+  } catch (e) { setWaveMsg('waveform failed: ' + e.message); }
+  finally { trim.loading = false; }
+}
+
+function sizeCanvas() {
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth, h = 120;
+  canvas.width = w * dpr; canvas.height = h * dpr;
+  cctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (trim.buffer) computePeaks(w);
+}
+function computePeaks(w) {
+  const data = trim.buffer.getChannelData(0);
+  const block = Math.max(1, Math.floor(data.length / w));
+  const step = Math.max(1, Math.floor(block / 200));
+  const peaks = [];
+  for (let i = 0; i < w; i++) {
+    let min = 1, max = -1;
+    const off = i * block;
+    for (let j = 0; j < block && off + j < data.length; j += step) {
+      const v = data[off + j];
+      if (v < min) min = v;
+      if (v > max) max = v;
+    }
+    peaks.push([min === 1 ? 0 : min, max === -1 ? 0 : max]);
+  }
+  trim.peaks = peaks;
+}
+function drawWave() {
+  const w = canvas.clientWidth, h = 120, mid = h / 2;
+  cctx.clearRect(0, 0, w, h);
+  if (!trim.peaks) return;
+  const sx = trim.start / trim.duration * w, ex = trim.end / trim.duration * w;
+  for (let x = 0; x < w; x++) {
+    const [min, max] = trim.peaks[x];
+    cctx.fillStyle = (x >= sx && x <= ex) ? '#e0393e' : '#3a4150';
+    const y1 = mid + min * mid * 0.9, y2 = mid + max * mid * 0.9;
+    cctx.fillRect(x, y2, 1, Math.max(1, y1 - y2));
+  }
+  cctx.fillStyle = 'rgba(15,17,21,.55)';
+  cctx.fillRect(0, 0, sx, h);
+  cctx.fillRect(ex, 0, w - ex, h);
+  for (const x of [sx, ex]) {
+    cctx.fillStyle = '#e0393e';
+    cctx.fillRect(x - 1, 0, 2, h);
+    cctx.beginPath(); cctx.arc(x, mid, 6, 0, Math.PI * 2); cctx.fill();
+  }
+}
+
+let drag = null;
+canvas.addEventListener('pointerdown', e => {
+  if (!trim.loaded) return;
+  const rect = canvas.getBoundingClientRect();
+  const x = e.clientX - rect.left, w = canvas.clientWidth;
+  const t = x / w * trim.duration;
+  const sx = trim.start / trim.duration * w, ex = trim.end / trim.duration * w;
+  if (Math.abs(x - sx) <= 8) drag = {type: 'start'};
+  else if (Math.abs(x - ex) <= 8) drag = {type: 'end'};
+  else if (x > sx && x < ex) drag = {type: 'window', offset: t - trim.start};
+  else if (Math.abs(x - sx) < Math.abs(x - ex)) drag = {type: 'start'};
+  else drag = {type: 'end'};
+  canvas.setPointerCapture(e.pointerId);
+  applyDrag(x);
+});
+canvas.addEventListener('pointermove', e => {
+  if (!drag) return;
+  applyDrag(e.clientX - canvas.getBoundingClientRect().left);
+});
+canvas.addEventListener('pointerup', () => { drag = null; });
+function applyDrag(x) {
+  const w = canvas.clientWidth;
+  const t = Math.max(0, Math.min(trim.duration, x / w * trim.duration));
+  if (drag.type === 'start') trim.start = Math.min(t, trim.end - 0.1);
+  else if (drag.type === 'end') trim.end = Math.max(t, trim.start + 0.1);
+  else {
+    const len = trim.end - trim.start;
+    const s = Math.max(0, Math.min(trim.duration - len, t - drag.offset));
+    trim.start = s; trim.end = s + len;
+  }
+  drawWave(); syncTrimInputs();
+}
+
+function fmtTime(s) {
+  const m = Math.floor(s / 60), sec = String(Math.floor(s % 60)).padStart(2, '0');
+  return `${m}:${sec}`;
+}
+function syncTrimInputs() {
+  $('trimStart').value = fmtTime(trim.start);
+  $('trimEnd').value = fmtTime(trim.end);
+}
+['trimStart', 'trimEnd'].forEach(id => $(id).onchange = () => {
+  const s = parseTime($('trimStart').value), e2 = parseTime($('trimEnd').value);
+  if (s == null || e2 == null || e2 <= s) { syncTrimInputs(); return; }
+  trim.start = Math.max(0, s);
+  trim.end = Math.min(trim.duration, e2);
+  drawWave(); syncTrimInputs();
+});
+
+function stopTrimPlay() {
+  if (playSource) { try { playSource.stop(); } catch (e) {} playSource = null; }
+  $('trimStopBtn').style.display = 'none';
+  $('trimPlayBtn').style.display = 'inline-block';
+}
+$('trimPlayBtn').onclick = () => {
+  if (!trim.loaded) return;
+  stopTrimPlay();
+  audioCtx = audioCtx || new AudioContext();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  const src = audioCtx.createBufferSource();
+  src.buffer = trim.buffer;
+  src.connect(audioCtx.destination);
+  src.start(0, trim.start, trim.end - trim.start);
+  src.onended = () => { if (playSource === src) stopTrimPlay(); };
+  playSource = src;
+  $('trimStopBtn').style.display = 'inline-block';
+  $('trimPlayBtn').style.display = 'none';
 };
+$('trimStopBtn').onclick = stopTrimPlay;
+window.addEventListener('resize', () => { if (trim.loaded) { sizeCanvas(); drawWave(); } });
+
 function trimValue() {
   if (!$('trimChk').checked) return null;
-  const start = parseTime($('trimStart').value.trim());
-  const end = parseTime($('trimEnd').value.trim());
-  if (start == null || end == null || end <= start) return undefined;
-  return {start, end};
+  if (!trim.loaded) return undefined;
+  if (trim.start <= 0.05 && trim.end >= trim.duration - 0.05) return null;
+  return {start: +trim.start.toFixed(2), end: +trim.end.toFixed(2)};
 }
 
 $('previewBtn').onclick = async () => {
@@ -313,7 +459,7 @@ $('dlBtn').onclick = async () => {
   hideError();
   const quality = qualityValue('q');
   const trim = trimValue();
-  if (trim === undefined) { showError('Invalid trim range (use mm:ss or seconds)'); return; }
+  if (trim === undefined) { showError('Waveform still loading — wait or uncheck Trim'); return; }
   $('dlBtn').disabled = true;
   $('progressWrap').style.display = 'block';
   try {
@@ -351,8 +497,9 @@ $('dlBtn').onclick = async () => {
 $('resetBtn').onclick = () => {
   $('url').value = ''; previewInfo = null;
   ['preview','quality','actions','progressWrap','save','results'].forEach(id => $(id).style.display = 'none');
-  $('trimRow').style.display = 'none'; $('trimAudio').style.display = 'none';
-  $('trimChk').checked = false; $('trimStart').value = ''; $('trimEnd').value = '';
+  $('trimWidget').style.display = 'none'; $('trimChk').checked = false;
+  stopTrimPlay();
+  Object.assign(trim, {start: 0, end: 0, duration: 0, peaks: null, buffer: null, loaded: false, loading: false});
   $('bar').style.width = '0%'; hideError();
 };
 

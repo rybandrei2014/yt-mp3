@@ -29,7 +29,7 @@ PLAN.md              design rationale (read before changing quality/format logic
 - `GET /api/health` — yt-dlp version, ffmpeg present, detected JS runtimes
 - `POST /api/preview` `{url}` → `{type:"video",...}` or `{type:"playlist", entries:[{id,title,duration,thumbnail,url}]}` (flat extraction — fast)
 - `POST /api/download` `{url, quality, cover, entries?, trim?}` → `{id, group}` (single) or `{group, total}` (playlist). `entries` = list of selected video URLs; creates one job per entry, tracked together under `group`. `cover: true` writes `<song>.png` for every job in the group. `trim: {start, end}` (seconds) cuts the finished file losslessly
-- `POST /api/trim-preview` `{url, trim}` → `{id}` — downloads full track as temp mp3 at `worstaudio/worst` (low SSD/bandwidth strain), cuts range, serves at `GET /api/trim/{id}` (for the `<audio>` preview)
+- `POST /api/trim-preview` `{url, trim?}` → `{id}` — downloads full track as temp mp3 at `worstaudio/worst` (low SSD/bandwidth strain), optionally cuts range, serves at `GET /api/trim/{id}`. Without `trim` it returns the whole track — the UI uses that to render the waveform cutter widget (canvas peaks + Web Audio preview playback, no server round-trip per play)
 - `GET /api/job/{id}` — snapshot; `GET /api/job/{id}/events` — SSE stream
 - `GET /api/group/{id}/events` — SSE aggregate: `{total, done, failed, progress, finished, items:[snapshots]}`; blocks until the whole group finishes
 - `GET /api/file/{id}` — serves finished file; `GET /api/file/{id}/cover` — serves extracted cover

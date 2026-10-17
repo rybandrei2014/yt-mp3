@@ -123,7 +123,7 @@ class DownloadRequest(BaseModel):
 
 class TrimPreviewRequest(BaseModel):
     url: str
-    trim: TrimRange
+    trim: TrimRange | None = None
 
 
 def base_ydl_opts() -> dict:
@@ -230,7 +230,7 @@ trim_previews: dict[str, str] = {}
 
 @app.post("/api/trim-preview")
 def trim_preview(req: TrimPreviewRequest):
-    if req.trim.start < 0 or req.trim.end <= req.trim.start:
+    if req.trim and (req.trim.start < 0 or req.trim.end <= req.trim.start):
         raise HTTPException(status_code=422, detail="invalid trim range")
     if not shutil.which("ffmpeg"):
         raise HTTPException(status_code=500, detail="ffmpeg not found on PATH")
@@ -257,9 +257,10 @@ def trim_preview(req: TrimPreviewRequest):
         path = requested[0].get("filepath") if requested else None
         if not path or not Path(path).exists():
             raise HTTPException(status_code=422, detail="could not download preview source")
-        cut_file(path, req.trim.start, req.trim.end)
+        if req.trim:
+            cut_file(path, req.trim.start, req.trim.end)
         trim_previews[pid] = path
-        return {"id": pid, "duration": req.trim.end - req.trim.start}
+        return {"id": pid, "duration": (req.trim.end - req.trim.start) if req.trim else info.get("duration")}
     except yt_dlp.utils.DownloadError as e:
         raise HTTPException(status_code=422, detail=str(e))
 

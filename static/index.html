@@ -413,6 +413,9 @@ function openTrim(item) {
   playhead = null;
   trim.file = item;
   trim.loaded = false; trim.buffer = null; trim.peaks = null;
+  trim.start = 0; trim.end = 0; trim.duration = 0;
+  cctx.clearRect(0, 0, canvas.width, canvas.height);
+  $('trimStart').value = '0:00'; $('trimEnd').value = '0:00';
   $('trimTitle').textContent = item.filename;
   $('trimResult').style.display = 'none';
   $('trimModal').style.display = 'flex';

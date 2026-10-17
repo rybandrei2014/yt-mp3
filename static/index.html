@@ -13,6 +13,7 @@
   }
   main { width: 100%; max-width: 640px; padding: 40px 20px; }
   h1 { font-size: 1.6rem; margin: 0 0 4px; }
+  h2 { font-size: 1.1rem; margin: 30px 0 10px; }
   .sub { color: #8a8f98; font-size: .9rem; margin-bottom: 24px; }
   .row { display: flex; gap: 8px; }
   input[type=url] {
@@ -25,7 +26,7 @@
   }
   button:disabled { opacity: .4; cursor: default; }
   button.ghost { background: #232833; }
-  button.small { padding: 8px 12px; font-size: .85rem; }
+  button.small { padding: 7px 12px; font-size: .82rem; }
   #preview { display: none; margin-top: 20px; gap: 14px; align-items: center; }
   #preview img { width: 168px; border-radius: 8px; }
   #preview .meta { font-size: .9rem; color: #aab0ba; }
@@ -44,25 +45,21 @@
   #error { display: none; margin-top: 16px; padding: 10px 12px; border-radius: 8px;
     background: #3a1d20; color: #f0a0a4; font-size: .9rem; word-break: break-word; }
   #save { display: none; margin-top: 16px; }
-  #trimWidget { margin-top: 10px; }
-  #waveWrap { position: relative; background: #171a21; border: 1px solid #2a2f3a; border-radius: 8px; overflow: hidden; }
-  #wave { display: block; width: 100%; height: 120px; cursor: crosshair; touch-action: none; }
-  #waveMsg {
-    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-    color: #8a8f98; font-size: .9rem; pointer-events: none;
-  }
-  .trimTimes { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
-  .trimTimes input {
-    width: 70px; padding: 8px 10px; border-radius: 8px; border: 1px solid #2a2f3a;
-    background: #171a21; color: #e6e6e6; font-size: .9rem; text-align: center;
-  }
-  .trimTimes .dash { color: #8a8f98; }
   #results { display: none; margin-top: 16px; font-size: .9rem; }
   #results div { padding: 6px 0; border-bottom: 1px solid #1c2029; }
   #results a { color: #7ec8ff; }
   #results .fail { color: #f0a0a4; }
+  #library { margin-top: 10px; }
+  .libRow {
+    display: flex; align-items: center; gap: 10px; padding: 9px 12px; margin-bottom: 6px;
+    background: #171a21; border: 1px solid #2a2f3a; border-radius: 8px; font-size: .88rem;
+  }
+  .libRow .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .libRow .dur { color: #8a8f98; font-size: .8rem; white-space: nowrap; }
+  .libRow a { color: #7ec8ff; text-decoration: none; }
+  #libEmpty { color: #8a8f98; font-size: .88rem; }
   /* modal */
-  #modal {
+  .modal {
     display: none; position: fixed; inset: 0; background: rgba(0,0,0,.65);
     z-index: 10; justify-content: center; align-items: center; padding: 20px;
   }
@@ -71,8 +68,7 @@
     width: 100%; max-width: 560px; max-height: 85vh; display: flex; flex-direction: column;
     padding: 20px;
   }
-  .modal-box h2 { margin: 0 0 4px; font-size: 1.15rem; }
-  .modal-box .sub { margin-bottom: 12px; }
+  .modal-box h3 { margin: 0 0 12px; font-size: 1.05rem; word-break: break-word; }
   #plList { overflow-y: auto; flex: 1; margin: 10px 0; }
   .entry {
     display: flex; align-items: center; gap: 10px; padding: 8px 10px;
@@ -85,6 +81,20 @@
   .entry .d { font-size: .8rem; color: #8a8f98; white-space: nowrap; }
   .modal-actions { display: flex; gap: 8px; margin-top: 12px; }
   .modal-actions .spacer { flex: 1; }
+  #waveWrap { position: relative; background: #0f1115; border: 1px solid #2a2f3a; border-radius: 8px; overflow: hidden; }
+  #wave { display: block; width: 100%; height: 120px; cursor: crosshair; touch-action: none; }
+  #waveMsg {
+    position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
+    color: #8a8f98; font-size: .9rem; pointer-events: none;
+  }
+  .trimTimes { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+  .trimTimes input {
+    width: 70px; padding: 8px 10px; border-radius: 8px; border: 1px solid #2a2f3a;
+    background: #0f1115; color: #e6e6e6; font-size: .9rem; text-align: center;
+  }
+  .trimTimes .dash { color: #8a8f98; }
+  #trimResult { display: none; margin-top: 10px; font-size: .9rem; }
+  #trimResult a { color: #7ec8ff; }
 </style>
 </head>
 <body>
@@ -111,20 +121,6 @@
     <label class="qlabel"><input type="radio" name="q" value="m4a"> M4A (AAC, compatible)</label>
     <label class="qlabel"><input type="radio" name="q" value="mp3"> MP3 (VBR highest, compatible)</label>
     <label class="qlabel"><input type="checkbox" id="coverChk"> Save cover art as separate .png file</label>
-    <label class="qlabel"><input type="checkbox" id="trimChk"> Trim (cut audio to a time range)</label>
-    <div id="trimWidget" style="display:none">
-      <div id="waveWrap">
-        <canvas id="wave"></canvas>
-        <div id="waveMsg"></div>
-      </div>
-      <div class="trimTimes">
-        <input id="trimStart" type="text" value="0:00">
-        <span class="dash">–</span>
-        <input id="trimEnd" type="text" value="0:00">
-        <button id="trimPlayBtn" class="ghost small">▶ Preview</button>
-        <button id="trimStopBtn" class="ghost small" style="display:none">■ Stop</button>
-      </div>
-    </div>
   </div>
 
   <div class="row" id="actions">
@@ -140,11 +136,15 @@
   <div id="error"></div>
   <div id="save">Saved: <a id="saveLink" href="#"></a></div>
   <div id="results"></div>
+
+  <h2>Library</h2>
+  <div id="library"></div>
+  <div id="libEmpty" style="display:none">Nothing downloaded yet.</div>
 </main>
 
-<div id="modal">
+<div id="plModal" class="modal">
   <div class="modal-box">
-    <h2 id="plTitle"></h2>
+    <h3 id="plTitle"></h3>
     <div class="sub" id="plMeta"></div>
     <div class="row">
       <button class="ghost small" id="selAll">Select all</button>
@@ -162,18 +162,37 @@
   </div>
 </div>
 
+<div id="trimModal" class="modal">
+  <div class="modal-box">
+    <h3 id="trimTitle"></h3>
+    <div id="waveWrap">
+      <canvas id="wave"></canvas>
+      <div id="waveMsg"></div>
+    </div>
+    <div class="trimTimes">
+      <input id="trimStart" type="text" value="0:00">
+      <span class="dash">–</span>
+      <input id="trimEnd" type="text" value="0:00">
+      <button id="trimPlayBtn" class="ghost small">▶ Preview</button>
+      <button id="trimStopBtn" class="ghost small" style="display:none">■ Stop</button>
+    </div>
+    <div id="trimResult"></div>
+    <div class="modal-actions">
+      <button id="trimCutBtn">✂ Cut</button>
+      <div class="spacer"></div>
+      <button class="ghost" id="trimCancel">Close</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const $ = id => document.getElementById(id);
 let previewInfo = null;
 
 function fmtDur(s) {
-  if (!s) return '';
-  const m = Math.floor(s / 60), sec = String(s % 60).padStart(2, '0');
+  if (s == null) return '';
+  const m = Math.floor(s / 60), sec = String(Math.floor(s % 60)).padStart(2, '0');
   return `${m}:${sec}`;
-}
-function qualityValue(prefix) {
-  const checked = document.querySelector(`input[name=${prefix}q]:checked`);
-  return checked ? checked.value : 'opus';
 }
 function parseTime(s) {
   if (!s) return null;
@@ -183,26 +202,219 @@ function parseTime(s) {
   const [, a, b, c] = m;
   return c !== undefined ? +a * 3600 + +b * 60 + +c : +a * 60 + +b;
 }
-const trim = { start: 0, end: 0, duration: 0, peaks: null, buffer: null, loaded: false, loading: false };
+function showError(msg) { $('error').textContent = msg; $('error').style.display = 'block'; }
+function hideError() { $('error').style.display = 'none'; }
+
+/* ---------- single video flow ---------- */
+$('previewBtn').onclick = async () => {
+  hideError();
+  const url = $('url').value.trim();
+  if (!url) return;
+  $('previewBtn').disabled = true;
+  try {
+    const r = await fetch('/api/preview', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({url})
+    });
+    if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
+    previewInfo = await r.json();
+    if (previewInfo.type === 'playlist') openPlaylistModal(previewInfo);
+    else openSingle(previewInfo);
+  } catch (e) { showError(e.message); }
+  finally { $('previewBtn').disabled = false; }
+};
+
+function openSingle(info) {
+  $('thumb').src = info.thumbnail;
+  $('pTitle').textContent = info.title;
+  $('pMeta').textContent = `${info.uploader || ''} · ${fmtDur(info.duration)}`;
+  $('preview').style.display = 'flex';
+  $('quality').style.display = 'block';
+  $('actions').style.display = 'flex';
+}
+
+$('dlBtn').onclick = async () => {
+  hideError();
+  const quality = document.querySelector('input[name=q]:checked').value;
+  $('dlBtn').disabled = true;
+  $('progressWrap').style.display = 'block';
+  try {
+    const r = await fetch('/api/download', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({url: $('url').value.trim(), quality, cover: $('coverChk').checked})
+    });
+    if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
+    const {id} = await r.json();
+    const es = new EventSource(`/api/job/${id}/events`);
+    es.onmessage = ev => {
+      const j = JSON.parse(ev.data);
+      $('bar').style.width = j.progress + '%';
+      $('status').textContent = j.status + (j.status === 'downloading' ? ` — ${j.progress}%` : '');
+      if (j.status === 'done') {
+        es.close();
+        $('saveLink').href = `/api/file/${j.id}`;
+        $('saveLink').textContent = j.filename;
+        $('save').style.display = 'block';
+        if (j.cover_filename) {
+          const c = document.createElement('a');
+          c.href = `/api/file/${j.id}/cover`; c.textContent = ' + ' + j.cover_filename;
+          $('save').append(c);
+        }
+        $('dlBtn').disabled = false;
+        loadLibrary();
+      } else if (j.status === 'error') {
+        es.close();
+        showError(j.error);
+        $('dlBtn').disabled = false;
+      }
+    };
+  } catch (e) { showError(e.message); $('dlBtn').disabled = false; }
+};
+
+$('resetBtn').onclick = () => {
+  $('url').value = ''; previewInfo = null;
+  ['preview','quality','actions','progressWrap','save','results'].forEach(id => $(id).style.display = 'none');
+  $('bar').style.width = '0%'; hideError();
+};
+
+/* ---------- playlist flow ---------- */
+function openPlaylistModal(info) {
+  $('plTitle').textContent = info.title || 'Playlist';
+  $('plMeta').textContent = `${info.count} videos${info.uploader ? ' · ' + info.uploader : ''}`;
+  const list = $('plList');
+  list.innerHTML = '';
+  for (const e of info.entries) {
+    const label = document.createElement('label');
+    label.className = 'entry';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox'; cb.checked = true; cb.dataset.url = e.url;
+    const img = document.createElement('img');
+    if (e.thumbnail) img.src = e.thumbnail; else img.style.visibility = 'hidden';
+    const t = document.createElement('div'); t.className = 't'; t.textContent = e.title;
+    const d = document.createElement('div'); d.className = 'd'; d.textContent = fmtDur(e.duration);
+    label.append(cb, img, t, d);
+    list.appendChild(label);
+  }
+  updatePlDlCount();
+  $('plModal').style.display = 'flex';
+}
+function selectedUrls() {
+  return [...document.querySelectorAll('#plList input:checked')].map(cb => cb.dataset.url);
+}
+function updatePlDlCount() {
+  $('plDlBtn').textContent = `Download (${selectedUrls().length})`;
+}
+$('plList').addEventListener('change', updatePlDlCount);
+$('selAll').onclick = () => { document.querySelectorAll('#plList input').forEach(cb => cb.checked = true); updatePlDlCount(); };
+$('selNone').onclick = () => { document.querySelectorAll('#plList input').forEach(cb => cb.checked = false); updatePlDlCount(); };
+$('plCancel').onclick = () => { $('plModal').style.display = 'none'; };
+
+$('plDlBtn').onclick = async () => {
+  hideError();
+  const urls = selectedUrls();
+  if (!urls.length) return;
+  $('plDlBtn').disabled = true;
+  $('plModal').style.display = 'none';
+  $('progressWrap').style.display = 'block';
+  try {
+    const r = await fetch('/api/download', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({url: $('url').value.trim(), quality: document.querySelector('input[name=q]:checked').value, cover: $('plCoverChk').checked, entries: urls})
+    });
+    if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
+    const res = await r.json();
+    watchGroup(res.group);
+  } catch (e) { showError(e.message); $('plDlBtn').disabled = false; }
+};
+
+function watchGroup(groupId) {
+  const es = new EventSource(`/api/group/${groupId}/events`);
+  es.onmessage = ev => {
+    const g = JSON.parse(ev.data);
+    $('bar').style.width = g.progress + '%';
+    $('status').textContent = `${g.done}/${g.total} done` + (g.failed ? ` · ${g.failed} failed` : '');
+    if (g.finished) {
+      es.close();
+      renderResults(g.items);
+      $('plDlBtn').disabled = false;
+      loadLibrary();
+    }
+  };
+}
+function renderResults(items) {
+  const box = $('results');
+  box.innerHTML = '';
+  for (const it of items) {
+    const div = document.createElement('div');
+    if (it.status === 'done' && it.filename) {
+      const a = document.createElement('a');
+      a.href = `/api/file/${it.id}`; a.textContent = it.filename;
+      div.append('✓ ', a);
+      if (it.cover_filename) {
+        const c = document.createElement('a');
+        c.href = `/api/file/${it.id}/cover`; c.textContent = ' ' + it.cover_filename;
+        div.append(' + ', c);
+      }
+    } else {
+      div.className = 'fail';
+      div.textContent = `✗ ${it.title || it.id} — ${it.error || 'failed'}`;
+    }
+    box.appendChild(div);
+  }
+  box.style.display = 'block';
+}
+
+/* ---------- library ---------- */
+async function loadLibrary() {
+  try {
+    const r = await fetch('/api/library');
+    const {items} = await r.json();
+    const box = $('library');
+    box.innerHTML = '';
+    $('libEmpty').style.display = items.length ? 'none' : 'block';
+    for (const it of items) {
+      const row = document.createElement('div');
+      row.className = 'libRow';
+      const name = document.createElement('span');
+      name.className = 'name'; name.textContent = it.filename; name.title = it.filename;
+      const dur = document.createElement('span');
+      dur.className = 'dur'; dur.textContent = fmtDur(it.duration);
+      const trimBtn = document.createElement('button');
+      trimBtn.className = 'ghost small'; trimBtn.textContent = '✂ Trim';
+      trimBtn.onclick = () => openTrim(it);
+      const dl = document.createElement('a');
+      dl.href = `/api/file-by-name/${encodeURIComponent(it.filename)}`;
+      dl.innerHTML = `<button class="small">Save</button>`;
+      row.append(name, dur, trimBtn, dl);
+      box.appendChild(row);
+    }
+  } catch (e) { /* ignore */ }
+}
+
+/* ---------- trim modal (local files) ---------- */
+const trim = { start: 0, end: 0, duration: 0, peaks: null, buffer: null, loaded: false, loading: false, file: null };
 let audioCtx = null, playSource = null;
 const canvas = $('wave'), cctx = canvas.getContext('2d');
 
-$('trimChk').onchange = () => {
-  const on = $('trimChk').checked;
-  $('trimWidget').style.display = on ? 'block' : 'none';
-  if (on && !trim.loaded && !trim.loading) loadWaveform();
-  if (!on) stopTrimPlay();
-};
-
 function setWaveMsg(m) { $('waveMsg').textContent = m; $('waveMsg').style.display = m ? 'flex' : 'none'; }
 
-async function loadWaveform() {
+function openTrim(item) {
+  trim.file = item;
+  trim.loaded = false; trim.buffer = null; trim.peaks = null;
+  $('trimTitle').textContent = item.filename;
+  $('trimResult').style.display = 'none';
+  $('trimModal').style.display = 'flex';
+  loadWaveformLocal(item.id);
+}
+$('trimCancel').onclick = () => { stopTrimPlay(); $('trimModal').style.display = 'none'; };
+
+async function loadWaveformLocal(fileId) {
   trim.loading = true;
   setWaveMsg('loading waveform…');
   try {
     const r = await fetch('/api/trim-preview', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({url: $('url').value.trim()})
+      body: JSON.stringify({file_id: fileId})
     });
     if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
     const {id} = await r.json();
@@ -295,14 +507,9 @@ function applyDrag(x) {
   }
   drawWave(); syncTrimInputs();
 }
-
-function fmtTime(s) {
-  const m = Math.floor(s / 60), sec = String(Math.floor(s % 60)).padStart(2, '0');
-  return `${m}:${sec}`;
-}
 function syncTrimInputs() {
-  $('trimStart').value = fmtTime(trim.start);
-  $('trimEnd').value = fmtTime(trim.end);
+  $('trimStart').value = fmtDur(trim.start);
+  $('trimEnd').value = fmtDur(trim.end);
 }
 ['trimStart', 'trimEnd'].forEach(id => $(id).onchange = () => {
   const s = parseTime($('trimStart').value), e2 = parseTime($('trimEnd').value);
@@ -332,179 +539,37 @@ $('trimPlayBtn').onclick = () => {
   $('trimPlayBtn').style.display = 'none';
 };
 $('trimStopBtn').onclick = stopTrimPlay;
-window.addEventListener('resize', () => { if (trim.loaded) { sizeCanvas(); drawWave(); } });
+window.addEventListener('resize', () => { if (trim.loaded && $('trimModal').style.display === 'flex') { sizeCanvas(); drawWave(); } });
 
-function trimValue() {
-  if (!$('trimChk').checked) return null;
-  if (!trim.loaded) return undefined;
-  if (trim.start <= 0.05 && trim.end >= trim.duration - 0.05) return null;
-  return {start: +trim.start.toFixed(2), end: +trim.end.toFixed(2)};
-}
-
-$('previewBtn').onclick = async () => {
-  hideError();
-  const url = $('url').value.trim();
-  if (!url) return;
-  $('previewBtn').disabled = true;
-  try {
-    const r = await fetch('/api/preview', {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({url})
-    });
-    if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
-    previewInfo = await r.json();
-    if (previewInfo.type === 'playlist') openPlaylistModal(previewInfo);
-    else openSingle(previewInfo);
-  } catch (e) { showError(e.message); }
-  finally { $('previewBtn').disabled = false; }
-};
-
-function openSingle(info) {
-  $('thumb').src = info.thumbnail;
-  $('pTitle').textContent = info.title;
-  $('pMeta').textContent = `${info.uploader || ''} · ${fmtDur(info.duration)}`;
-  $('preview').style.display = 'flex';
-  $('quality').style.display = 'block';
-  $('actions').style.display = 'flex';
-}
-
-function openPlaylistModal(info) {
-  $('plTitle').textContent = info.title || 'Playlist';
-  $('plMeta').textContent = `${info.count} videos${info.uploader ? ' · ' + info.uploader : ''}`;
-  const list = $('plList');
-  list.innerHTML = '';
-  for (const e of info.entries) {
-    const label = document.createElement('label');
-    label.className = 'entry';
-    const cb = document.createElement('input');
-    cb.type = 'checkbox'; cb.checked = true; cb.dataset.url = e.url;
-    const img = document.createElement('img');
-    if (e.thumbnail) img.src = e.thumbnail; else img.style.visibility = 'hidden';
-    const t = document.createElement('div'); t.className = 't'; t.textContent = e.title;
-    const d = document.createElement('div'); d.className = 'd'; d.textContent = fmtDur(e.duration);
-    label.append(cb, img, t, d);
-    list.appendChild(label);
+$('trimCutBtn').onclick = async () => {
+  if (!trim.loaded || !trim.file) return;
+  if (trim.start <= 0.05 && trim.end >= trim.duration - 0.05) {
+    $('trimResult').textContent = 'Select a range smaller than the whole track.';
+    $('trimResult').style.display = 'block';
+    return;
   }
-  updatePlDlCount();
-  $('modal').style.display = 'flex';
-}
-
-function selectedUrls() {
-  return [...document.querySelectorAll('#plList input:checked')].map(cb => cb.dataset.url);
-}
-function updatePlDlCount() {
-  $('plDlBtn').textContent = `Download (${selectedUrls().length})`;
-}
-$('plList').addEventListener('change', updatePlDlCount);
-$('selAll').onclick = () => { document.querySelectorAll('#plList input').forEach(cb => cb.checked = true); updatePlDlCount(); };
-$('selNone').onclick = () => { document.querySelectorAll('#plList input').forEach(cb => cb.checked = false); updatePlDlCount(); };
-$('plCancel').onclick = () => { $('modal').style.display = 'none'; };
-
-$('plDlBtn').onclick = async () => {
-  hideError();
-  const urls = selectedUrls();
-  if (!urls.length) return;
-  $('plDlBtn').disabled = true;
-  $('modal').style.display = 'none';
-  $('progressWrap').style.display = 'block';
+  $('trimCutBtn').disabled = true;
   try {
-    const r = await fetch('/api/download', {
+    const r = await fetch('/api/trim-local', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({url: $('url').value.trim(), quality: qualityValue('q'), cover: $('plCoverChk').checked, entries: urls})
+      body: JSON.stringify({file_id: trim.file.id, trim: {start: +trim.start.toFixed(2), end: +trim.end.toFixed(2)}})
     });
     if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
     const res = await r.json();
-    watchGroup(res.group);
-  } catch (e) { showError(e.message); $('plDlBtn').disabled = false; }
+    $('trimResult').innerHTML = '';
+    const a = document.createElement('a');
+    a.href = `/api/file-by-name/${encodeURIComponent(res.filename)}`;
+    a.textContent = res.filename;
+    $('trimResult').append('Created: ', a);
+    $('trimResult').style.display = 'block';
+    loadLibrary();
+  } catch (e) {
+    $('trimResult').textContent = e.message;
+    $('trimResult').style.display = 'block';
+  } finally { $('trimCutBtn').disabled = false; }
 };
 
-function watchGroup(groupId) {
-  const es = new EventSource(`/api/group/${groupId}/events`);
-  es.onmessage = ev => {
-    const g = JSON.parse(ev.data);
-    $('bar').style.width = g.progress + '%';
-    $('status').textContent = `${g.done}/${g.total} done` + (g.failed ? ` · ${g.failed} failed` : '');
-    if (g.finished) {
-      es.close();
-      renderResults(g.items);
-      $('plDlBtn').disabled = false;
-    }
-  };
-}
-
-function renderResults(items) {
-  const box = $('results');
-  box.innerHTML = '';
-  for (const it of items) {
-    const div = document.createElement('div');
-    if (it.status === 'done' && it.filename) {
-      const a = document.createElement('a');
-      a.href = `/api/file/${it.id}`; a.textContent = it.filename;
-      div.append('✓ ', a);
-      if (it.cover_filename) {
-        const c = document.createElement('a');
-        c.href = `/api/file/${it.id}/cover`; c.textContent = ' ' + it.cover_filename;
-        div.append(' + ', c);
-      }
-    } else {
-      div.className = 'fail';
-      div.textContent = `✗ ${it.title || it.id} — ${it.error || 'failed'}`;
-    }
-    box.appendChild(div);
-  }
-  box.style.display = 'block';
-}
-
-$('dlBtn').onclick = async () => {
-  hideError();
-  const quality = qualityValue('q');
-  const trim = trimValue();
-  if (trim === undefined) { showError('Waveform still loading — wait or uncheck Trim'); return; }
-  $('dlBtn').disabled = true;
-  $('progressWrap').style.display = 'block';
-  try {
-    const r = await fetch('/api/download', {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({url: $('url').value.trim(), quality, cover: $('coverChk').checked, ...(trim ? {trim} : {})})
-    });
-    if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
-    const {id} = await r.json();
-    const es = new EventSource(`/api/job/${id}/events`);
-    es.onmessage = ev => {
-      const j = JSON.parse(ev.data);
-      $('bar').style.width = j.progress + '%';
-      $('status').textContent = j.status + (j.status === 'downloading' ? ` — ${j.progress}%` : '');
-      if (j.status === 'done') {
-        es.close();
-        $('saveLink').href = `/api/file/${j.id}`;
-        $('saveLink').textContent = j.filename;
-        $('save').style.display = 'block';
-        if (j.cover_filename) {
-          const c = document.createElement('a');
-          c.href = `/api/file/${j.id}/cover`; c.textContent = ' + ' + j.cover_filename;
-          $('save').append(c);
-        }
-        $('dlBtn').disabled = false;
-      } else if (j.status === 'error') {
-        es.close();
-        showError(j.error);
-        $('dlBtn').disabled = false;
-      }
-    };
-  } catch (e) { showError(e.message); $('dlBtn').disabled = false; }
-};
-
-$('resetBtn').onclick = () => {
-  $('url').value = ''; previewInfo = null;
-  ['preview','quality','actions','progressWrap','save','results'].forEach(id => $(id).style.display = 'none');
-  $('trimWidget').style.display = 'none'; $('trimChk').checked = false;
-  stopTrimPlay();
-  Object.assign(trim, {start: 0, end: 0, duration: 0, peaks: null, buffer: null, loaded: false, loading: false});
-  $('bar').style.width = '0%'; hideError();
-};
-
-function showError(msg) { $('error').textContent = msg; $('error').style.display = 'block'; }
-function hideError() { $('error').style.display = 'none'; }
+loadLibrary();
 </script>
 </body>
 </html>

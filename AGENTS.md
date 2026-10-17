@@ -28,11 +28,13 @@ PLAN.md              design rationale (read before changing quality/format logic
 
 - `GET /api/health` — yt-dlp version, ffmpeg present, detected JS runtimes
 - `POST /api/preview` `{url}` → `{type:"video",...}` or `{type:"playlist", entries:[{id,title,duration,thumbnail,url}]}` (flat extraction — fast)
-- `POST /api/download` `{url, quality, cover, entries?, trim?}` → `{id, group}` (single) or `{group, total}` (playlist). `entries` = list of selected video URLs; creates one job per entry, tracked together under `group`. `cover: true` writes `<song>.png` for every job in the group. `trim: {start, end}` (seconds) cuts the finished file losslessly
-- `POST /api/trim-preview` `{url, trim?}` → `{id}` — downloads full track as temp mp3 at `worstaudio/worst` re-encoded to 64k mp3 (low SSD/bandwidth strain), optionally cuts range, serves at `GET /api/trim/{id}`. Without `trim` it returns the whole track — the UI uses that to render the waveform cutter widget (canvas peaks + Web Audio preview playback, no server round-trip per play). Cached per video id: re-opening the widget or re-trimming the same song never re-downloads
+- `POST /api/download` `{url, quality, cover, entries?}` → `{id, group}` (single) or `{group, total}` (playlist). `entries` = list of selected video URLs; creates one job per entry, tracked together under `group`. `cover: true` writes `<song>.png` for every job in the group. Downloads are ALWAYS full tracks — trimming is a separate post-download step
+- `GET /api/library` — downloaded audio files in `download_dir` (`{items:[{id,filename,duration,size,cover}]}`, id = sha1(name)[:12], duration cached by mtime)
+- `POST /api/trim-preview` `{url?, file_id?, trim?}` → `{id}` — waveform source served at `GET /api/trim/{id}` as 64k mp3. `file_id` = local library file (ffmpeg-converted locally, NO YouTube call — this is what the UI trim widget uses); `url` = YouTube worstaudio download (only for pre-download preview). Cached per id
+- `POST /api/trim-local` `{file_id, trim:{start,end}}` → cuts a COPY named `<stem>_<XmYYs>_<XmYYs>.<ext>` via `ffmpeg -c copy` (original kept), returns new `{id, filename}`
+- `GET /api/file/{id}` / `GET /api/file/{id}/cover` — job outputs; `GET /api/file-by-name/{name}` — library files by filename (path-traversal guarded)
 - `GET /api/job/{id}` — snapshot; `GET /api/job/{id}/events` — SSE stream
 - `GET /api/group/{id}/events` — SSE aggregate: `{total, done, failed, progress, finished, items:[snapshots]}`; blocks until the whole group finishes
-- `GET /api/file/{id}` — serves finished file; `GET /api/file/{id}/cover` — serves extracted cover
 
 ## Quality model (do not regress)
 

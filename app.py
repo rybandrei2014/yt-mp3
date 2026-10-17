@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import json
 import shutil
 import subprocess
@@ -83,8 +84,6 @@ class Job:
     title: str = ""
     filepath: str | None = None
     cover_path: str | None = None
-    trim_start: float | None = None
-    trim_end: float | None = None
     error: str | None = None
     created_at: float = field(default_factory=lambda: __import__("time").time())
 
@@ -122,12 +121,17 @@ class DownloadRequest(BaseModel):
     quality: str = "opus"
     cover: bool = False
     entries: list[str] | None = None
-    trim: TrimRange | None = None
 
 
 class TrimPreviewRequest(BaseModel):
-    url: str
+    url: str | None = None
+    file_id: str | None = None
     trim: TrimRange | None = None
+
+
+class TrimLocalRequest(BaseModel):
+    file_id: str
+    trim: TrimRange
 
 
 def base_ydl_opts() -> dict:
@@ -216,20 +220,70 @@ def extract_cover(job: Job, info: dict) -> str | None:
     return None
 
 
-def cut_file(path: str, start: float, end: float) -> None:
-    src = Path(path)
-    tmp = src.with_name(src.stem + ".cut" + src.suffix)
+trim_previews: dict[str, str] = {}
+
+
+AUDIO_EXTS = {".opus", ".webm", ".m4a", ".mp3", ".ogg"}
+_lib_cache: dict[str, tuple[float, float]] = {}
+
+
+def file_id(path: Path) -> str:
+    return hashlib.sha1(path.name.encode("utf-8")).hexdigest()[:12]
+
+
+def resolve_file(fid: str) -> Path | None:
+    for f in DOWNLOADS_DIR.iterdir():
+        if f.is_file() and f.suffix.lower() in AUDIO_EXTS and file_id(f) == fid:
+            return f
+    return None
+
+
+def probe_duration(path: Path) -> float | None:
+    stat = path.stat()
+    key = str(path)
+    cached = _lib_cache.get(key)
+    if cached and cached[0] == stat.st_mtime:
+        return cached[1]
     r = subprocess.run(
-        [shutil.which("ffmpeg"), "-y", "-loglevel", "error",
-         "-ss", str(start), "-to", str(end), "-i", str(src), "-c", "copy", str(tmp)],
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(path)],
         capture_output=True, text=True,
     )
-    if r.returncode != 0 or not tmp.exists():
-        raise RuntimeError(f"trim failed: {r.stderr.strip()[:200]}")
-    tmp.replace(src)
+    dur = float(r.stdout.strip()) if r.returncode == 0 and r.stdout.strip() else None
+    if dur is not None:
+        _lib_cache[key] = (stat.st_mtime, dur)
+    return dur
 
 
-trim_previews: dict[str, str] = {}
+@app.get("/api/library")
+def library():
+    items = []
+    for f in sorted(DOWNLOADS_DIR.iterdir(), key=lambda p: p.name.lower()):
+        if not f.is_file() or f.suffix.lower() not in AUDIO_EXTS:
+            continue
+        items.append(
+            {
+                "id": file_id(f),
+                "filename": f.name,
+                "duration": probe_duration(f),
+                "size": f.stat().st_size,
+                "cover": f.with_suffix(".png").exists(),
+            }
+        )
+    return {"items": items}
+
+
+def make_preview(source: Path, pid: str) -> str:
+    out = PREVIEW_DIR / f".preview_{pid}.mp3"
+    if out.exists():
+        return str(out)
+    r = subprocess.run(
+        [shutil.which("ffmpeg"), "-y", "-loglevel", "error", "-i", str(source),
+         "-b:a", "64k", str(out)],
+        capture_output=True, text=True,
+    )
+    if r.returncode != 0 or not out.exists():
+        raise HTTPException(status_code=422, detail=f"preview failed: {r.stderr.strip()[:200]}")
+    return str(out)
 
 
 @app.post("/api/trim-preview")
@@ -238,6 +292,28 @@ def trim_preview(req: TrimPreviewRequest):
         raise HTTPException(status_code=422, detail="invalid trim range")
     if not shutil.which("ffmpeg"):
         raise HTTPException(status_code=500, detail="ffmpeg not found on PATH")
+    if req.file_id:
+        src = resolve_file(req.file_id)
+        if not src:
+            raise HTTPException(status_code=404, detail="file not found")
+        pid = req.file_id
+        path = make_preview(src, pid)
+        if req.trim:
+            cut = PREVIEW_DIR / f".preview_{pid}_cut.mp3"
+            r = subprocess.run(
+                [shutil.which("ffmpeg"), "-y", "-loglevel", "error",
+                 "-ss", str(req.trim.start), "-to", str(req.trim.end),
+                 "-i", path, "-c", "copy", str(cut)],
+                capture_output=True, text=True,
+            )
+            if r.returncode != 0 or not cut.exists():
+                raise HTTPException(status_code=422, detail=f"trim failed: {r.stderr.strip()[:200]}")
+            trim_previews["cut_" + pid] = str(cut)
+            return {"id": "cut_" + pid, "duration": req.trim.end - req.trim.start}
+        trim_previews[pid] = path
+        return {"id": pid, "duration": probe_duration(src)}
+    if not req.url:
+        raise HTTPException(status_code=422, detail="url or file_id required")
     flat_opts = base_ydl_opts()
     flat_opts["extract_flat"] = "in_playlist"
     try:
@@ -271,21 +347,32 @@ def trim_preview(req: TrimPreviewRequest):
             raise HTTPException(status_code=422, detail=str(e))
         if not full.exists():
             raise HTTPException(status_code=422, detail="could not download preview source")
-    if req.trim:
-        pid = uuid.uuid4().hex[:8]
-        cut = PREVIEW_DIR / f".preview_{vid}_{pid}.mp3"
-        r = subprocess.run(
-            [shutil.which("ffmpeg"), "-y", "-loglevel", "error",
-             "-ss", str(req.trim.start), "-to", str(req.trim.end),
-             "-i", str(full), "-c", "copy", str(cut)],
-            capture_output=True, text=True,
-        )
-        if r.returncode != 0 or not cut.exists():
-            raise HTTPException(status_code=422, detail=f"trim failed: {r.stderr.strip()[:200]}")
-        trim_previews[pid] = str(cut)
-        return {"id": pid, "duration": req.trim.end - req.trim.start}
     trim_previews[vid] = str(full)
     return {"id": vid, "duration": info.get("duration")}
+
+
+def fmt_compact(seconds: float) -> str:
+    m, s = divmod(int(seconds), 60)
+    return f"{m}m{s:02d}s"
+
+
+@app.post("/api/trim-local")
+def trim_local(req: TrimLocalRequest):
+    if req.trim.start < 0 or req.trim.end <= req.trim.start:
+        raise HTTPException(status_code=422, detail="invalid trim range")
+    src = resolve_file(req.file_id)
+    if not src:
+        raise HTTPException(status_code=404, detail="file not found")
+    out = src.with_name(f"{src.stem}_{fmt_compact(req.trim.start)}_{fmt_compact(req.trim.end)}{src.suffix}")
+    r = subprocess.run(
+        [shutil.which("ffmpeg"), "-y", "-loglevel", "error",
+         "-ss", str(req.trim.start), "-to", str(req.trim.end),
+         "-i", str(src), "-c", "copy", str(out)],
+        capture_output=True, text=True,
+    )
+    if r.returncode != 0 or not out.exists():
+        raise HTTPException(status_code=422, detail=f"trim failed: {r.stderr.strip()[:200]}")
+    return {"id": file_id(out), "filename": out.name}
 
 
 @app.get("/api/trim/{preview_id}")
@@ -310,15 +397,8 @@ def run_job(job: Job):
         job.status = "done" if job.filepath else "error"
         if not job.filepath:
             job.error = "download finished but output file not found"
-        else:
-            if job.trim_start is not None and job.trim_end is not None:
-                try:
-                    cut_file(job.filepath, job.trim_start, job.trim_end)
-                except RuntimeError as e:
-                    job.error = str(e)
-                    job.status = "error"
-            if job.cover and job.status == "done":
-                job.cover_path = extract_cover(job, info)
+        elif job.cover:
+            job.cover_path = extract_cover(job, info)
     except yt_dlp.utils.DownloadError as e:
         job.error = str(e)
         job.status = "error"
@@ -391,14 +471,7 @@ def start_download(req: DownloadRequest):
     job_ids = []
     with jobs_lock:
         for url in urls:
-            job = Job(
-                id=uuid.uuid4().hex[:12],
-                url=url,
-                quality=req.quality,
-                cover=req.cover,
-                trim_start=req.trim.start if req.trim else None,
-                trim_end=req.trim.end if req.trim else None,
-            )
+            job = Job(id=uuid.uuid4().hex[:12], url=url, quality=req.quality, cover=req.cover)
             jobs[job.id] = job
             job_ids.append(job.id)
         groups[group_id] = job_ids
@@ -483,6 +556,14 @@ def get_cover(job_id: str):
     path = Path(job.cover_path)
     if not path.exists():
         raise HTTPException(status_code=410, detail="file expired")
+    return FileResponse(path, filename=path.name)
+
+
+@app.get("/api/file-by-name/{name}")
+def get_file_by_name(name: str):
+    path = (DOWNLOADS_DIR / name).resolve()
+    if not str(path).startswith(str(DOWNLOADS_DIR.resolve())) or not path.is_file():
+        raise HTTPException(status_code=404, detail="file not found")
     return FileResponse(path, filename=path.name)
 
 

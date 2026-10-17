@@ -8,7 +8,18 @@ Self-hosted, savemp3-style web tool to download **best-quality audio** from YouT
 - Cover art embedding + optional separate `.png`
 - No database, no build step: FastAPI + one vanilla-JS page
 
-## Requirements
+## Download (no install needed)
+
+Grab the archive for your OS from the [latest release](https://github.com/rybandrei2014/yt-mp3/releases) — `yt-mp3-<version>-win64.zip`, `-macos-arm64.zip` or `-linux64.zip`. Unpack anywhere, run `yt-mp3` (`yt-mp3.exe` on Windows): the server starts and your browser opens at <http://127.0.0.1:8000>. `ffmpeg`/`ffprobe` and a JS runtime are **bundled** in the `bin/` folder — nothing else to install. Downloads land in `downloads/` next to the executable.
+
+First launch caveats (binaries are unsigned):
+
+- **Windows**: SmartScreen → *More info* → *Run anyway*
+- **macOS**: right-click → *Open* once, or `xattr -dr com.apple.quarantine yt-mp3`
+
+To cut a release: `git tag v0.1.0; git push --tags` — GitHub Actions builds all three archives automatically.
+
+## Requirements (running from source)
 
 - Python 3.10+
 - `ffmpeg` on PATH (required for opus/m4a/mp3 and trimming)
@@ -61,6 +72,8 @@ There is no lossless source on YouTube; "320k MP3" is never better than the Opus
 ```
 app.py               FastAPI backend + yt-dlp Python API + in-memory job manager (ThreadPoolExecutor)
 static/index.html    single-page UI (vanilla JS, SSE progress, canvas waveform)
+yt-mp3.spec          PyInstaller build for the release archives
+.github/workflows/   release.yml: on tag v*, builds win/mac/linux archives with bundled ffmpeg + qjs
 downloads/           output files (+ hidden .previews/ for trim waveforms)
 ```
 

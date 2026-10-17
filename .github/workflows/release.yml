@@ -1,0 +1,101 @@
+name: release
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            tag: win64
+          - os: macos-14
+            tag: macos-arm64
+          - os: ubuntu-22.04
+            tag: linux64
+    runs-on: ${{ matrix.os }}
+    env:
+      QJS_VERSION: v0.17.0
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python deps
+        run: pip install -r requirements-build.txt
+
+      - name: Download ffmpeg + qjs (windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory bin | Out-Null
+          Invoke-WebRequest https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip -OutFile ff.zip
+          Expand-Archive ff.zip -DestinationPath ff
+          Copy-Item ff/ffmpeg-master-latest-win64-gpl/bin/ffmpeg.exe bin/
+          Copy-Item ff/ffmpeg-master-latest-win64-gpl/bin/ffprobe.exe bin/
+          Invoke-WebRequest "https://github.com/quickjs-ng/quickjs/releases/download/${env:QJS_VERSION}/qjs-windows-x86_64.exe" -OutFile bin/qjs.exe
+
+      - name: Download ffmpeg + qjs (macos)
+        if: matrix.os == 'macos-14'
+        run: |
+          mkdir -p bin
+          curl -fL -o ff.zip https://ffmpeg.martin-riedl.de/redirect/latest/macos/arm64/release/ffmpeg.zip
+          curl -fL -o fp.zip https://ffmpeg.martin-riedl.de/redirect/latest/macos/arm64/release/ffprobe.zip
+          unzip ff.zip -d bin
+          unzip fp.zip -d bin
+          curl -fL -o bin/qjs "https://github.com/quickjs-ng/quickjs/releases/download/$QJS_VERSION/qjs-darwin-arm64"
+          chmod +x bin/*
+
+      - name: Download ffmpeg + qjs (linux)
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          mkdir -p bin
+          curl -fL -o ff.tar.xz https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz
+          tar -xf ff.tar.xz
+          cp ffmpeg-master-latest-linux64-gpl/bin/ffmpeg ffmpeg-master-latest-linux64-gpl/bin/ffprobe bin/
+          curl -fL -o bin/qjs "https://github.com/quickjs-ng/quickjs/releases/download/$QJS_VERSION/qjs-linux-x86_64"
+          chmod +x bin/*
+
+      - name: Build with PyInstaller
+        run: pyinstaller --noconfirm yt-mp3.spec
+
+      - name: Bundle bin/ into dist
+        shell: pwsh
+        run: Copy-Item -Recurse bin dist/yt-mp3/bin
+
+      - name: Smoke test
+        shell: pwsh
+        run: |
+          $exe = Join-Path dist/yt-mp3 "yt-mp3$($IsWindows ? '.exe' : '')"
+          $p = Start-Process -FilePath $exe -PassThru
+          try {
+            $ok = $false
+            foreach ($i in 1..20) {
+              Start-Sleep -Seconds 2
+              try { $h = Invoke-RestMethod http://127.0.0.1:8000/api/health; $ok = $true; break } catch {}
+            }
+            if (-not $ok) { throw "server did not come up" }
+            $h | ConvertTo-Json -Compress
+            if (-not $h.ffmpeg) { throw "bundled ffmpeg not detected" }
+            if ($h.js_runtimes.Count -eq 0) { throw "bundled qjs not detected" }
+          } finally {
+            Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: Archive
+        shell: pwsh
+        run: 7z a -tzip "yt-mp3-${{ github.ref_name }}-${{ matrix.tag }}.zip" dist/yt-mp3/*
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: yt-mp3-${{ github.ref_name }}-${{ matrix.tag }}.zip
+          generate_release_notes: true

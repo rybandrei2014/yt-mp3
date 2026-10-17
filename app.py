@@ -1,8 +1,10 @@
 import asyncio
 import hashlib
 import json
+import os
 import shutil
 import subprocess
+import sys
 import threading
 import urllib.request
 import uuid
@@ -16,7 +18,16 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-BASE_DIR = Path(__file__).resolve().parent
+FROZEN = bool(getattr(sys, "frozen", False))
+if FROZEN:
+    BASE_DIR = Path(sys.executable).resolve().parent
+    APP_DIR = Path(sys._MEIPASS)
+else:
+    BASE_DIR = APP_DIR = Path(__file__).resolve().parent
+
+BIN_DIR = BASE_DIR / "bin"
+if BIN_DIR.is_dir():
+    os.environ["PATH"] = os.pathsep.join([str(BIN_DIR), os.environ.get("PATH", "")])
 
 DEFAULT_CONFIG = {
     "browser": None,
@@ -573,7 +584,7 @@ def get_file_by_name(name: str):
     return FileResponse(path, filename=path.name)
 
 
-app.mount("/", StaticFiles(directory=BASE_DIR / "static", html=True), name="static")
+app.mount("/", StaticFiles(directory=APP_DIR / "static", html=True), name="static")
 
 
 if __name__ == "__main__":
@@ -583,4 +594,8 @@ if __name__ == "__main__":
         print("WARNING: no JS runtime (deno/node/quickjs) found on PATH - YouTube may fail")
     if not shutil.which("ffmpeg"):
         print("WARNING: ffmpeg not found on PATH - m4a/mp3 conversion will fail")
-    uvicorn.run(app, host="127.0.0.1", port=int(CONFIG["port"]))
+    port = int(CONFIG["port"])
+    if FROZEN:
+        import webbrowser
+        threading.Timer(1.0, webbrowser.open, args=(f"http://127.0.0.1:{port}",)).start()
+    uvicorn.run(app, host="127.0.0.1", port=port)

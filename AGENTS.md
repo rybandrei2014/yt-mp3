@@ -18,11 +18,20 @@ Runtime deps on PATH: `ffmpeg` (required for opus/m4a/mp3), a JS runtime — `no
 ```
 app.py               FastAPI backend + yt-dlp Python API + in-process job manager
 static/index.html    single-page UI (vanilla JS, SSE progress)
-config.json          optional (see config.example.json): browser cookies, port, max_concurrent, download_dir
+config.json          optional (see config.example.json): browser cookies, port, max_concurrent, download_dir — GITIGNORED (personal), never commit
 requirements.txt     loose pins | requirements.lock frozen (regenerate: pip freeze > requirements.lock)
+requirements-build.txt  release build deps (pyinstaller)
+yt-mp3.spec          PyInstaller spec (onedir; bundles static/, yt_dlp_ejs plugin + metadata)
+.github/workflows/release.yml  on tag v*: matrix win64/macos-arm64/linux64 → GitHub Release
 downloads/           output files
 PLAN.md              design rationale (read before changing quality/format logic)
 ```
+
+## Releases
+
+`git tag vX.Y.Z && git push --tags` → CI (`.github/workflows/release.yml`) per OS: downloads ffmpeg+ffprobe (BtbN builds for win/linux; ffmpeg.martin-riedl.de for macos-arm64) and quickjs-ng `qjs` binary (pinned `QJS_VERSION`) into `bin/`, runs `pyinstaller yt-mp3.spec`, copies `bin/` into `dist/yt-mp3/`, smoke-tests the frozen exe (`/api/health` must report bundled ffmpeg + quickjs), zips to GitHub Release.
+
+Frozen-app gotchas (app.py top): `BASE_DIR` = exe dir (writable: config.json, downloads), `APP_DIR` = `sys._MEIPASS` (bundled static/), `BASE_DIR/bin` is prepended to `PATH` so `shutil.which`/`detect_js_runtimes` find the bundled binaries; browser auto-opens only when frozen. Local build: `.\.venv\Scripts\pyinstaller.exe --noconfirm yt-mp3.spec` (output in `dist/`, gitignored).
 
 ## API
 

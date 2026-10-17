@@ -127,6 +127,7 @@ class TrimPreviewRequest(BaseModel):
     url: str | None = None
     file_id: str | None = None
     trim: TrimRange | None = None
+    mp3: bool = False
 
 
 class TrimLocalRequest(BaseModel):
@@ -297,6 +298,9 @@ def trim_preview(req: TrimPreviewRequest):
         if not src:
             raise HTTPException(status_code=404, detail="file not found")
         pid = req.file_id
+        if not req.mp3:
+            trim_previews["raw_" + pid] = str(src)
+            return {"id": "raw_" + pid, "duration": probe_duration(src)}
         path = make_preview(src, pid)
         if req.trim:
             cut = PREVIEW_DIR / f".preview_{pid}_cut.mp3"
@@ -380,7 +384,9 @@ def get_trim(preview_id: str):
     path = trim_previews.get(preview_id)
     if not path or not Path(path).exists():
         raise HTTPException(status_code=404, detail="preview not found")
-    return FileResponse(path, media_type="audio/mpeg")
+    media = {".opus": "audio/ogg", ".ogg": "audio/ogg", ".mp3": "audio/mpeg",
+             ".m4a": "audio/mp4", ".webm": "audio/webm"}.get(Path(path).suffix.lower(), "application/octet-stream")
+    return FileResponse(path, media_type=media)
 
 
 def run_job(job: Job):

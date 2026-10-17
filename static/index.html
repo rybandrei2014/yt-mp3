@@ -411,19 +411,26 @@ function openTrim(item) {
 }
 $('trimCancel').onclick = () => { stopTrimPlay(); $('trimModal').style.display = 'none'; };
 
+async function fetchDecode(body) {
+  const r = await fetch('/api/trim-preview', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body)
+  });
+  if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
+  const {id} = await r.json();
+  const ab = await (await fetch(`/api/trim/${id}`)).arrayBuffer();
+  return audioCtx.decodeAudioData(ab);
+}
 async function loadWaveformLocal(fileId) {
   trim.loading = true;
   setWaveMsg('loading waveform…');
   try {
-    const r = await fetch('/api/trim-preview', {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({file_id: fileId})
-    });
-    if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
-    const {id} = await r.json();
-    const ab = await (await fetch(`/api/trim/${id}`)).arrayBuffer();
     audioCtx = audioCtx || new AudioContext();
-    trim.buffer = await audioCtx.decodeAudioData(ab);
+    try {
+      trim.buffer = await fetchDecode({file_id: fileId});
+    } catch (e) {
+      trim.buffer = await fetchDecode({file_id: fileId, mp3: true});
+    }
     trim.duration = trim.buffer.duration;
     trim.start = 0; trim.end = trim.duration;
     trim.loaded = true;

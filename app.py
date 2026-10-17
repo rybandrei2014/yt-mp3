@@ -234,35 +234,54 @@ def trim_preview(req: TrimPreviewRequest):
         raise HTTPException(status_code=422, detail="invalid trim range")
     if not shutil.which("ffmpeg"):
         raise HTTPException(status_code=500, detail="ffmpeg not found on PATH")
-    pid = uuid.uuid4().hex[:12]
-    sweep_temp_files()
-    trim_previews.clear()
-    opts = base_ydl_opts()
-    opts.update(
-        {
-            "format": "worstaudio/worst",
-            "paths": {"home": str(PREVIEW_DIR)},
-            "outtmpl": f".preview_{pid}.%(ext)s",
-            "postprocessors": [
-                {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "0"}
-            ],
-        }
-    )
+    flat_opts = base_ydl_opts()
+    flat_opts["extract_flat"] = "in_playlist"
     try:
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(req.url, download=True)
-        if info.get("_type") == "playlist" and info.get("entries"):
-            info = info["entries"][0]
-        requested = info.get("requested_downloads") or []
-        path = requested[0].get("filepath") if requested else None
-        if not path or not Path(path).exists():
-            raise HTTPException(status_code=422, detail="could not download preview source")
-        if req.trim:
-            cut_file(path, req.trim.start, req.trim.end)
-        trim_previews[pid] = path
-        return {"id": pid, "duration": (req.trim.end - req.trim.start) if req.trim else info.get("duration")}
+        with yt_dlp.YoutubeDL(flat_opts) as ydl:
+            info = ydl.extract_info(req.url, download=False)
     except yt_dlp.utils.DownloadError as e:
         raise HTTPException(status_code=422, detail=str(e))
+    if info.get("_type") == "playlist" and info.get("entries"):
+        info = info["entries"][0]
+    vid = info.get("id")
+    if not vid:
+        raise HTTPException(status_code=422, detail="could not resolve video id")
+    full = PREVIEW_DIR / f".preview_{vid}.mp3"
+    if not full.exists():
+        sweep_temp_files()
+        opts = base_ydl_opts()
+        opts.update(
+            {
+                "format": "worstaudio/worst",
+                "paths": {"home": str(PREVIEW_DIR)},
+                "outtmpl": f".preview_{vid}.%(ext)s",
+                "postprocessors": [
+                    {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": 64}
+                ],
+            }
+        )
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                ydl.extract_info(req.url, download=True)
+        except yt_dlp.utils.DownloadError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+        if not full.exists():
+            raise HTTPException(status_code=422, detail="could not download preview source")
+    if req.trim:
+        pid = uuid.uuid4().hex[:8]
+        cut = PREVIEW_DIR / f".preview_{vid}_{pid}.mp3"
+        r = subprocess.run(
+            [shutil.which("ffmpeg"), "-y", "-loglevel", "error",
+             "-ss", str(req.trim.start), "-to", str(req.trim.end),
+             "-i", str(full), "-c", "copy", str(cut)],
+            capture_output=True, text=True,
+        )
+        if r.returncode != 0 or not cut.exists():
+            raise HTTPException(status_code=422, detail=f"trim failed: {r.stderr.strip()[:200]}")
+        trim_previews[pid] = str(cut)
+        return {"id": pid, "duration": req.trim.end - req.trim.start}
+    trim_previews[vid] = str(full)
+    return {"id": vid, "duration": info.get("duration")}
 
 
 @app.get("/api/trim/{preview_id}")

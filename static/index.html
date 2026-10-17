@@ -394,11 +394,13 @@ async function loadLibrary() {
 /* ---------- trim modal (local files) ---------- */
 const trim = { start: 0, end: 0, duration: 0, peaks: null, buffer: null, loaded: false, loading: false, file: null };
 let audioCtx = null, playSource = null;
+let playhead = null, playStartCtx = 0, playStartOffset = 0, rafId = null;
 const canvas = $('wave'), cctx = canvas.getContext('2d');
 
 function setWaveMsg(m) { $('waveMsg').textContent = m; $('waveMsg').style.display = m ? 'flex' : 'none'; }
 
 function openTrim(item) {
+  stopTrimPlay();
   trim.file = item;
   trim.loaded = false; trim.buffer = null; trim.peaks = null;
   $('trimTitle').textContent = item.filename;
@@ -473,11 +475,18 @@ function drawWave() {
     cctx.fillRect(x - 1, 0, 2, h);
     cctx.beginPath(); cctx.arc(x, mid, 6, 0, Math.PI * 2); cctx.fill();
   }
+  if (playhead != null) {
+    const px = playhead / trim.duration * w;
+    cctx.fillStyle = '#ffffff';
+    cctx.fillRect(px - 1, 0, 2, h);
+    cctx.beginPath(); cctx.arc(px, 6, 4, 0, Math.PI * 2); cctx.fill();
+  }
 }
 
 let drag = null;
 canvas.addEventListener('pointerdown', e => {
   if (!trim.loaded) return;
+  stopTrimPlay();
   const rect = canvas.getBoundingClientRect();
   const x = e.clientX - rect.left, w = canvas.clientWidth;
   const t = x / w * trim.duration;
@@ -521,8 +530,19 @@ function syncTrimInputs() {
 
 function stopTrimPlay() {
   if (playSource) { try { playSource.stop(); } catch (e) {} playSource = null; }
+  if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+  playhead = null;
+  if (trim.loaded) drawWave();
   $('trimStopBtn').style.display = 'none';
   $('trimPlayBtn').style.display = 'inline-block';
+}
+function tickPlayhead() {
+  if (!playSource) return;
+  const pos = playStartOffset + (audioCtx.currentTime - playStartCtx);
+  playhead = Math.min(pos, trim.end);
+  drawWave();
+  if (pos >= trim.end) { stopTrimPlay(); return; }
+  rafId = requestAnimationFrame(tickPlayhead);
 }
 $('trimPlayBtn').onclick = () => {
   if (!trim.loaded) return;
@@ -535,6 +555,10 @@ $('trimPlayBtn').onclick = () => {
   src.start(0, trim.start, trim.end - trim.start);
   src.onended = () => { if (playSource === src) stopTrimPlay(); };
   playSource = src;
+  playStartCtx = audioCtx.currentTime;
+  playStartOffset = trim.start;
+  playhead = trim.start;
+  rafId = requestAnimationFrame(tickPlayhead);
   $('trimStopBtn').style.display = 'inline-block';
   $('trimPlayBtn').style.display = 'none';
 };

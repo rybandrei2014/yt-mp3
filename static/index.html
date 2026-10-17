@@ -21,7 +21,7 @@
     background: #171a21; color: #e6e6e6; font-size: 1rem;
   }
   button {
-    padding: 12px 18px; border: 0; border-radius: 8px; background: #e0393e;
+    padding: 12px 18px; border: 0; border-radius: 8px; background: #c9474c;
     color: #fff; font-size: 1rem; cursor: pointer;
   }
   button:disabled { opacity: .4; cursor: default; }
@@ -36,19 +36,19 @@
     display: block; padding: 10px 12px; margin-bottom: 6px; border-radius: 8px;
     background: #171a21; border: 1px solid #2a2f3a; cursor: pointer; font-size: .95rem;
   }
-  .qlabel:has(input:checked) { border-color: #e0393e; }
+  .qlabel:has(input:checked) { border-color: #c9474c; }
   #actions { display: none; margin-top: 16px; gap: 8px; }
   #progressWrap { display: none; margin-top: 20px; }
   .bar { height: 8px; border-radius: 4px; background: #232833; overflow: hidden; }
-  .bar > div { height: 100%; width: 0%; background: #e0393e; transition: width .3s; }
+  .bar > div { height: 100%; width: 0%; background: #c9474c; transition: width .3s; }
   #status { font-size: .85rem; color: #8a8f98; margin-top: 6px; }
   #error { display: none; margin-top: 16px; padding: 10px 12px; border-radius: 8px;
-    background: #3a1d20; color: #f0a0a4; font-size: .9rem; word-break: break-word; }
+    background: #3a2225; color: #e8b0b3; font-size: .9rem; word-break: break-word; }
   #save { display: none; margin-top: 16px; }
   #results { display: none; margin-top: 16px; font-size: .9rem; }
   #results div { padding: 6px 0; border-bottom: 1px solid #1c2029; }
   #results a { color: #7ec8ff; }
-  #results .fail { color: #f0a0a4; }
+  #results .fail { color: #e8b0b3; }
   #library { margin-top: 10px; }
   .libRow {
     display: flex; align-items: center; gap: 10px; padding: 9px 12px; margin-bottom: 6px;
@@ -503,7 +503,7 @@ function drawWave() {
   for (let i = 0; i < n; i++) {
     const [min, max] = trim.peaks[i];
     const x = i * W / n;
-    cctx.fillStyle = (x >= sx && x <= ex) ? '#a62424' : '#48484a';
+    cctx.fillStyle = (x >= sx && x <= ex) ? '#93343a' : '#48484a';
     const y1 = mid - max * mid * 0.98, y2 = mid - min * mid * 0.98;
     cctx.fillRect(x, y1, bw, Math.max(1, y2 - y1));
   }
@@ -522,9 +522,9 @@ function drawWave() {
   // selection boundary handles: bars with grip notch
   const hw = Math.max(2, Math.round(3 * dpr));
   for (const x of [sx, ex]) {
-    cctx.fillStyle = '#e0393e';
+    cctx.fillStyle = '#c9474c';
     cctx.fillRect(x - hw / 2, 0, hw, waveH);
-    cctx.fillStyle = '#7e1f23';
+    cctx.fillStyle = '#75282d';
     cctx.fillRect(x - hw / 2, mid - 8 * dpr, hw, 16 * dpr);
   }
   if (playhead != null) {

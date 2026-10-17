@@ -81,8 +81,14 @@
   .entry .d { font-size: .8rem; color: #8a8f98; white-space: nowrap; }
   .modal-actions { display: flex; gap: 8px; margin-top: 12px; }
   .modal-actions .spacer { flex: 1; }
+  #trimModal .modal-box { max-width: 960px; width: 94vw; }
+  #trimModal .modal-box.expanded { max-width: 98vw; width: 98vw; height: 94vh; }
+  #trimModal .modal-box.expanded #waveWrap { flex: 1; }
+  #trimModal .modal-box.expanded #wave { height: 100%; min-height: 220px; }
+  .modal-head { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+  .modal-head h3 { flex: 1; margin: 0; }
   #waveWrap { position: relative; background: #0f1115; border: 1px solid #2a2f3a; border-radius: 8px; overflow: hidden; }
-  #wave { display: block; width: 100%; height: 120px; cursor: crosshair; touch-action: none; }
+  #wave { display: block; width: 100%; height: 220px; cursor: crosshair; touch-action: none; }
   #waveMsg {
     position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
     color: #8a8f98; font-size: .9rem; pointer-events: none;
@@ -164,7 +170,10 @@
 
 <div id="trimModal" class="modal">
   <div class="modal-box">
-    <h3 id="trimTitle"></h3>
+    <div class="modal-head">
+      <h3 id="trimTitle"></h3>
+      <button id="trimExpandBtn" class="ghost small" title="Expand">⤢</button>
+    </div>
     <div id="waveWrap">
       <canvas id="wave"></canvas>
       <div id="waveMsg"></div>
@@ -410,6 +419,12 @@ function openTrim(item) {
   loadWaveformLocal(item.id);
 }
 $('trimCancel').onclick = () => { stopTrimPlay(); $('trimModal').style.display = 'none'; };
+$('trimExpandBtn').onclick = () => {
+  const box = $('trimModal').querySelector('.modal-box');
+  box.classList.toggle('expanded');
+  $('trimExpandBtn').textContent = box.classList.contains('expanded') ? '⤡' : '⤢';
+  if (trim.loaded) { sizeCanvas(); drawWave(); }
+};
 
 async function fetchDecode(body) {
   const r = await fetch('/api/trim-preview', {
@@ -442,17 +457,16 @@ async function loadWaveformLocal(fileId) {
 
 function sizeCanvas() {
   const dpr = window.devicePixelRatio || 1;
-  const w = canvas.clientWidth, h = 120;
-  canvas.width = w * dpr; canvas.height = h * dpr;
-  cctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  if (trim.buffer) computePeaks(w);
+  canvas.width = Math.floor(canvas.clientWidth * dpr);
+  canvas.height = Math.floor(canvas.clientHeight * dpr);
+  if (trim.buffer) computePeaks(canvas.width);
 }
-function computePeaks(w) {
+function computePeaks(n) {
   const data = trim.buffer.getChannelData(0);
-  const block = Math.max(1, Math.floor(data.length / w));
-  const step = Math.max(1, Math.floor(block / 200));
+  const block = Math.max(1, Math.floor(data.length / n));
+  const step = Math.max(1, Math.floor(block / 400));
   const peaks = [];
-  for (let i = 0; i < w; i++) {
+  for (let i = 0; i < n; i++) {
     let min = 1, max = -1;
     const off = i * block;
     for (let j = 0; j < block && off + j < data.length; j += step) {
@@ -465,29 +479,31 @@ function computePeaks(w) {
   trim.peaks = peaks;
 }
 function drawWave() {
-  const w = canvas.clientWidth, h = 120, mid = h / 2;
-  cctx.clearRect(0, 0, w, h);
+  const W = canvas.width, H = canvas.height, dpr = window.devicePixelRatio || 1, mid = H / 2;
+  cctx.clearRect(0, 0, W, H);
   if (!trim.peaks) return;
-  const sx = trim.start / trim.duration * w, ex = trim.end / trim.duration * w;
-  for (let x = 0; x < w; x++) {
-    const [min, max] = trim.peaks[x];
-    cctx.fillStyle = (x >= sx && x <= ex) ? '#e0393e' : '#3a4150';
+  const n = trim.peaks.length;
+  const sx = trim.start / trim.duration * W, ex = trim.end / trim.duration * W;
+  const bw = Math.max(1, W / n);
+  for (let i = 0; i < n; i++) {
+    const [min, max] = trim.peaks[i];
+    cctx.fillStyle = (i * W / n >= sx && i * W / n <= ex) ? '#e0393e' : '#3a4150';
     const y1 = mid + min * mid * 0.9, y2 = mid + max * mid * 0.9;
-    cctx.fillRect(x, y2, 1, Math.max(1, y1 - y2));
+    cctx.fillRect(i * W / n, y2, bw, Math.max(1, y1 - y2));
   }
   cctx.fillStyle = 'rgba(15,17,21,.55)';
-  cctx.fillRect(0, 0, sx, h);
-  cctx.fillRect(ex, 0, w - ex, h);
+  cctx.fillRect(0, 0, sx, H);
+  cctx.fillRect(ex, 0, W - ex, H);
   for (const x of [sx, ex]) {
     cctx.fillStyle = '#e0393e';
-    cctx.fillRect(x - 1, 0, 2, h);
-    cctx.beginPath(); cctx.arc(x, mid, 6, 0, Math.PI * 2); cctx.fill();
+    cctx.fillRect(x - dpr, 0, 2 * dpr, H);
+    cctx.beginPath(); cctx.arc(x, mid, 7 * dpr, 0, Math.PI * 2); cctx.fill();
   }
   if (playhead != null) {
-    const px = playhead / trim.duration * w;
+    const px = playhead / trim.duration * W;
     cctx.fillStyle = '#ffffff';
-    cctx.fillRect(px - 1, 0, 2, h);
-    cctx.beginPath(); cctx.arc(px, 6, 4, 0, Math.PI * 2); cctx.fill();
+    cctx.fillRect(px - dpr, 0, 2 * dpr, H);
+    cctx.beginPath(); cctx.arc(px, 7 * dpr, 5 * dpr, 0, Math.PI * 2); cctx.fill();
   }
 }
 

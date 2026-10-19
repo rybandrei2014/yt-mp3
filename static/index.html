@@ -397,7 +397,7 @@ function renderResults(items) {
 
 /* ---------- library (cursor-paged, infinite scroll) ---------- */
 const LIB_PAGE = 50;
-const lib = { cursor: null, done: false, loading: false, stale: false };
+const lib = { cursor: null, total: 0, firstKey: null, done: false, loading: false, stale: false };
 
 function libRow(it) {
   const row = document.createElement('div');
@@ -418,9 +418,27 @@ function libRow(it) {
 
 function resetLibrary() {
   $('library').innerHTML = '';
-  lib.cursor = null; lib.done = false; lib.stale = false;
+  lib.cursor = null; lib.firstKey = null; lib.done = false; lib.stale = false;
 }
 function refreshLibrary() { resetLibrary(); loadLibrary(); }
+
+async function silentRefresh() {
+  if (lib.loading) return;
+  lib.loading = true;
+  try {
+    const r = await fetch(`/api/library?limit=${LIB_PAGE}`);
+    const {items, total, next} = await r.json();
+    const key = items.map(i => i.filename).join('\n');
+    if (key !== lib.firstKey || total !== lib.total) {
+      $('library').innerHTML = '';
+      for (const it of items) $('library').appendChild(libRow(it));
+      lib.cursor = next; lib.done = !next; lib.firstKey = key; lib.total = total;
+      $('libEmpty').style.display = total ? 'none' : 'block';
+      if ($('libSentinel').getBoundingClientRect().top < innerHeight) loadLibrary();
+    }
+  } catch (e) { /* keep current list */ }
+  lib.loading = false;
+}
 
 async function loadLibrary() {
   if (lib.loading || lib.done) return;
@@ -435,9 +453,12 @@ async function loadLibrary() {
     const r = await fetch(`/api/library?limit=${LIB_PAGE}${q}`);
     const {items, total, next} = await r.json();
     spinner.remove();
+    const first = !lib.cursor;
     for (const it of items) box.appendChild(libRow(it));
     lib.cursor = next;
     lib.done = !next;
+    lib.total = total;
+    if (first) lib.firstKey = items.map(i => i.filename).join('\n');
     $('libEmpty').style.display = total ? 'none' : 'block';
   } catch (e) { spinner.remove(); }
   lib.loading = false;
@@ -451,7 +472,7 @@ const toTopBtn = $('toTop');
 addEventListener('scroll', () => {
   toTopBtn.style.display = scrollY > 400 ? 'block' : 'none';
   if (scrollY < 50) {
-    if (lib.stale) { lib.stale = false; refreshLibrary(); }
+    if (lib.stale) { lib.stale = false; silentRefresh(); }
   } else {
     lib.stale = true;
   }

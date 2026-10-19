@@ -59,6 +59,10 @@
     background: #171a21; border: 1px solid #2a2f3a; border-radius: 8px; font-size: .88rem;
   }
   .libRow .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .libRow img.cover {
+    width: 40px; height: 40px; border-radius: 6px; object-fit: cover;
+    flex-shrink: 0; background: #232833;
+  }
   .libRow .dur { color: #8a8f98; font-size: .8rem; white-space: nowrap; }
   .libRow a { color: #7ec8ff; text-decoration: none; }
   #libEmpty { color: #8a8f98; font-size: .88rem; }
@@ -427,7 +431,11 @@ function libRow(it) {
   delBtn.className = 'danger small'; delBtn.textContent = '✕ Delete';
   delBtn.onclick = () => confirmDelete(it);
   it._row = row;
-  row.append(name, dur, trimBtn, delBtn);
+  const img = document.createElement('img');
+  img.className = 'cover'; img.alt = ''; img.loading = 'lazy';
+  img.src = `/api/library/${it.id}/cover`;
+  img.onerror = () => img.remove();
+  row.append(img, name, dur, trimBtn, delBtn);
   return row;
 }
 

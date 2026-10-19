@@ -53,6 +53,7 @@ if not DOWNLOADS_DIR.is_absolute():
     DOWNLOADS_DIR = BASE_DIR / DOWNLOADS_DIR
 DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
 PREVIEW_DIR = DOWNLOADS_DIR / ".previews"
+COVER_DIR = DOWNLOADS_DIR / ".covers"
 
 
 def sweep_temp_files():
@@ -300,7 +301,36 @@ def delete_file(fid: str):
     if cover.exists():
         cover.unlink()
     _lib_cache.pop(str(f), None)
+    for old in COVER_DIR.glob(f"{fid}.*"):
+        old.unlink(missing_ok=True)
     return {"ok": True}
+
+
+@app.get("/api/library/{fid}/cover")
+def library_cover(fid: str):
+    f = resolve_file(fid)
+    if not f:
+        raise HTTPException(404, "file not found")
+    sidecar = f.with_suffix(".png")
+    src = sidecar if sidecar.exists() else f
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        raise HTTPException(404, "no cover")
+    COVER_DIR.mkdir(exist_ok=True)
+    out = COVER_DIR / f"{fid}.{int(src.stat().st_mtime)}.jpg"
+    if not out.exists():
+        for old in COVER_DIR.glob(f"{fid}.*"):
+            old.unlink(missing_ok=True)
+        r = subprocess.run(
+            [ffmpeg, "-y", "-loglevel", "error", "-i", str(src),
+             "-map", "0:v:0", "-frames:v", "1",
+             "-vf", "scale=128:128:force_original_aspect_ratio=decrease", str(out)],
+            capture_output=True,
+        )
+        if r.returncode != 0 or not out.exists():
+            out.unlink(missing_ok=True)
+            raise HTTPException(404, "no embedded cover")
+    return FileResponse(out)
 
 
 def make_preview(source: Path, pid: str) -> str:

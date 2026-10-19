@@ -290,6 +290,19 @@ def library(after: str | None = None, limit: int = 200):
     return {"items": items, "total": len(files), "next": nxt}
 
 
+@app.delete("/api/library/{fid}")
+def delete_file(fid: str):
+    f = resolve_file(fid)
+    if not f:
+        raise HTTPException(404, "file not found")
+    f.unlink()
+    cover = f.with_suffix(".png")
+    if cover.exists():
+        cover.unlink()
+    _lib_cache.pop(str(f), None)
+    return {"ok": True}
+
+
 def make_preview(source: Path, pid: str) -> str:
     out = PREVIEW_DIR / f".preview_{pid}.mp3"
     if out.exists():

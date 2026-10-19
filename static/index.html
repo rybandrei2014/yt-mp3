@@ -28,6 +28,8 @@
   }
   button:disabled { opacity: .4; cursor: default; }
   button.ghost { background: #232833; }
+  button.danger { background: #c9474c; border-color: #c9474c; color: #fff; }
+  button.danger:hover { background: #b23a3f; }
   button.small { padding: 7px 12px; font-size: .82rem; }
   #preview { display: none; margin-top: 20px; gap: 14px; align-items: center; }
   #preview img { width: 168px; border-radius: 8px; }
@@ -212,6 +214,18 @@
       <button id="trimCutBtn">✂ Cut</button>
       <div class="spacer"></div>
       <button class="ghost" id="trimCancel">Close</button>
+    </div>
+  </div>
+</div>
+
+<div id="delModal" class="modal">
+  <div class="modal-box" style="max-width:440px">
+    <h3 id="delTitle"></h3>
+    <div class="sub">The file is removed from disk. This cannot be undone.</div>
+    <div class="modal-actions">
+      <button id="delConfirm" class="danger">Delete</button>
+      <div class="spacer"></div>
+      <button class="ghost" id="delCancel">Cancel</button>
     </div>
   </div>
 </div>
@@ -409,10 +423,11 @@ function libRow(it) {
   const trimBtn = document.createElement('button');
   trimBtn.className = 'ghost small'; trimBtn.textContent = '✂ Trim';
   trimBtn.onclick = () => openTrim(it);
-  const dl = document.createElement('a');
-  dl.href = `/api/file-by-name/${encodeURIComponent(it.filename)}`;
-  dl.innerHTML = `<button class="small">Save</button>`;
-  row.append(name, dur, trimBtn, dl);
+  const delBtn = document.createElement('button');
+  delBtn.className = 'danger small'; delBtn.textContent = '✕ Delete';
+  delBtn.onclick = () => confirmDelete(it);
+  it._row = row;
+  row.append(name, dur, trimBtn, delBtn);
   return row;
 }
 
@@ -478,6 +493,29 @@ addEventListener('scroll', () => {
   }
 }, { passive: true });
 toTopBtn.onclick = () => scrollTo({ top: 0, behavior: 'smooth' });
+
+/* ---------- delete confirmation ---------- */
+let delTarget = null;
+function confirmDelete(it) {
+  delTarget = it;
+  $('delTitle').textContent = `Delete “${it.filename}”?`;
+  $('delModal').style.display = 'flex';
+}
+$('delCancel').onclick = () => { $('delModal').style.display = 'none'; delTarget = null; };
+$('delConfirm').onclick = async () => {
+  const it = delTarget;
+  $('delModal').style.display = 'none';
+  delTarget = null;
+  if (!it) return;
+  try {
+    const r = await fetch(`/api/library/${it.id}`, { method: 'DELETE' });
+    if (!r.ok) throw new Error((await r.json()).detail || r.status);
+    it._row.remove();
+    lib.total = Math.max(0, lib.total - 1);
+    if (lib.firstKey && lib.firstKey.split('\n').includes(it.filename)) lib.firstKey = null;
+    $('libEmpty').style.display = lib.total ? 'none' : 'block';
+  } catch (e) { alert(`Delete failed: ${e.message}`); }
+};
 
 /* ---------- trim modal (local files) ---------- */
 const trim = { start: 0, end: 0, duration: 0, peaks: null, buffer: null, loaded: false, loading: false, file: null };

@@ -153,6 +153,7 @@
   <h2>Library</h2>
   <div id="library"></div>
   <div id="libEmpty" style="display:none">Nothing downloaded yet.</div>
+  <div id="libSentinel"></div>
 </main>
 
 <div id="plModal" class="modal">
@@ -277,7 +278,7 @@ $('dlBtn').onclick = async () => {
           $('save').append(c);
         }
         $('dlBtn').disabled = false;
-        loadLibrary();
+        loadLibrary(true);
       } else if (j.status === 'error') {
         es.close();
         showError(j.error);
@@ -353,7 +354,7 @@ function watchGroup(groupId) {
       es.close();
       renderResults(g.items);
       $('plDlBtn').disabled = false;
-      loadLibrary();
+      loadLibrary(true);
     }
   };
 }
@@ -380,34 +381,49 @@ function renderResults(items) {
   box.style.display = 'block';
 }
 
-/* ---------- library ---------- */
-async function loadLibrary() {
+/* ---------- library (paged, infinite scroll) ---------- */
+const LIB_PAGE = 50;
+const lib = { offset: 0, total: 0, loading: false };
+
+function libRow(it) {
+  const row = document.createElement('div');
+  row.className = 'libRow';
+  const name = document.createElement('span');
+  name.className = 'name'; name.textContent = it.filename; name.title = it.filename;
+  const dur = document.createElement('span');
+  dur.className = 'dur'; dur.textContent = fmtDur(it.duration);
+  const trimBtn = document.createElement('button');
+  trimBtn.className = 'ghost small'; trimBtn.textContent = '✂ Trim';
+  trimBtn.onclick = () => openTrim(it);
+  const dl = document.createElement('a');
+  dl.href = `/api/file-by-name/${encodeURIComponent(it.filename)}`;
+  dl.innerHTML = `<button class="small">Save</button>`;
+  row.append(name, dur, trimBtn, dl);
+  return row;
+}
+
+async function loadLibrary(reset = false) {
+  if (reset) { $('library').innerHTML = ''; lib.offset = 0; lib.total = 0; }
+  if (lib.loading || (lib.offset > 0 && lib.offset >= lib.total)) return;
+  lib.loading = true;
   const box = $('library');
-  box.innerHTML = '<div class="spinner"></div>';
+  const spinner = document.createElement('div');
+  spinner.className = 'spinner';
+  box.appendChild(spinner);
   $('libEmpty').style.display = 'none';
   try {
-    const r = await fetch('/api/library');
-    const {items} = await r.json();
-    box.innerHTML = '';
-    $('libEmpty').style.display = items.length ? 'none' : 'block';
-    for (const it of items) {
-      const row = document.createElement('div');
-      row.className = 'libRow';
-      const name = document.createElement('span');
-      name.className = 'name'; name.textContent = it.filename; name.title = it.filename;
-      const dur = document.createElement('span');
-      dur.className = 'dur'; dur.textContent = fmtDur(it.duration);
-      const trimBtn = document.createElement('button');
-      trimBtn.className = 'ghost small'; trimBtn.textContent = '✂ Trim';
-      trimBtn.onclick = () => openTrim(it);
-      const dl = document.createElement('a');
-      dl.href = `/api/file-by-name/${encodeURIComponent(it.filename)}`;
-      dl.innerHTML = `<button class="small">Save</button>`;
-      row.append(name, dur, trimBtn, dl);
-      box.appendChild(row);
-    }
-  } catch (e) { box.innerHTML = ''; }
+    const r = await fetch(`/api/library?offset=${lib.offset}&limit=${LIB_PAGE}`);
+    const {items, total} = await r.json();
+    spinner.remove();
+    lib.total = total;
+    for (const it of items) box.appendChild(libRow(it));
+    lib.offset += items.length;
+    $('libEmpty').style.display = total ? 'none' : 'block';
+  } catch (e) { spinner.remove(); }
+  lib.loading = false;
 }
+new IntersectionObserver((es) => { if (es[0].isIntersecting) loadLibrary(); })
+  .observe($('libSentinel'));
 
 /* ---------- trim modal (local files) ---------- */
 const trim = { start: 0, end: 0, duration: 0, peaks: null, buffer: null, loaded: false, loading: false, file: null };
@@ -669,14 +685,14 @@ $('trimCutBtn').onclick = async () => {
     a.textContent = res.filename;
     $('trimResult').append('Created: ', a);
     $('trimResult').style.display = 'block';
-    loadLibrary();
+    loadLibrary(true);
   } catch (e) {
     $('trimResult').textContent = e.message;
     $('trimResult').style.display = 'block';
   } finally { $('trimCutBtn').disabled = false; }
 };
 
-loadLibrary();
+loadLibrary(true);
 </script>
 </body>
 </html>

@@ -267,21 +267,23 @@ def probe_duration(path: Path) -> float | None:
 
 
 @app.get("/api/library")
-def library():
-    items = []
-    for f in sorted(DOWNLOADS_DIR.iterdir(), key=lambda p: p.name.lower()):
-        if not f.is_file() or f.suffix.lower() not in AUDIO_EXTS:
-            continue
-        items.append(
-            {
-                "id": file_id(f),
-                "filename": f.name,
-                "duration": probe_duration(f),
-                "size": f.stat().st_size,
-                "cover": f.with_suffix(".png").exists(),
-            }
-        )
-    return {"items": items}
+def library(offset: int = 0, limit: int = 200):
+    limit = max(1, min(limit, 500))
+    files = sorted(
+        (f for f in DOWNLOADS_DIR.iterdir() if f.is_file() and f.suffix.lower() in AUDIO_EXTS),
+        key=lambda p: p.name.lower(),
+    )
+    items = [
+        {
+            "id": file_id(f),
+            "filename": f.name,
+            "duration": probe_duration(f),
+            "size": f.stat().st_size,
+            "cover": f.with_suffix(".png").exists(),
+        }
+        for f in files[offset : offset + limit]
+    ]
+    return {"items": items, "total": len(files), "offset": offset, "limit": limit}
 
 
 def make_preview(source: Path, pid: str) -> str:

@@ -65,6 +65,14 @@
     border-top-color: #c9474c; border-radius: 50%; animation: spin .8s linear infinite;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
+  #toTop {
+    display: none; position: fixed; right: 20px; bottom: 20px; z-index: 5;
+    width: 46px; height: 46px; border-radius: 50%; border: 1px solid #2a2f3a;
+    background: #0f1115; color: #c9474c; cursor: pointer; padding: 0;
+    box-shadow: 0 4px 14px rgba(0,0,0,.5); transition: border-color .2s, transform .2s;
+  }
+  #toTop:hover { border-color: #c9474c; transform: translateY(-2px); }
+  #toTop svg { display: block; margin: auto; }
   /* modal */
   .modal {
     display: none; position: fixed; inset: 0; background: rgba(0,0,0,.65);
@@ -155,6 +163,12 @@
   <div id="libEmpty" style="display:none">Nothing downloaded yet.</div>
   <div id="libSentinel"></div>
 </main>
+
+<button id="toTop" title="Scroll to top" aria-label="Scroll to top">
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 19V5"/><path d="M5 12l7-7 7 7"/>
+  </svg>
+</button>
 
 <div id="plModal" class="modal">
   <div class="modal-box">
@@ -424,6 +438,11 @@ async function loadLibrary(reset = false) {
 }
 new IntersectionObserver((es) => { if (es[0].isIntersecting) loadLibrary(); })
   .observe($('libSentinel'));
+
+/* ---------- scroll to top ---------- */
+const toTopBtn = $('toTop');
+addEventListener('scroll', () => { toTopBtn.style.display = scrollY > 400 ? 'block' : 'none'; }, { passive: true });
+toTopBtn.onclick = () => scrollTo({ top: 0, behavior: 'smooth' });
 
 /* ---------- trim modal (local files) ---------- */
 const trim = { start: 0, end: 0, duration: 0, peaks: null, buffer: null, loaded: false, loading: false, file: null };

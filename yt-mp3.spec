@@ -1,6 +1,12 @@
 # yt-mp3.spec — PyInstaller build for distribution (see .github/workflows/release.yml)
 # build: pyinstaller --noconfirm yt-mp3.spec
 from PyInstaller.utils.hooks import collect_all, copy_metadata
+import os, sys
+
+ICON = {"win32": "icon.ico", "darwin": "icon.icns"}.get(sys.platform)
+if ICON and not os.path.exists(ICON):
+    ICON = None
+
 
 datas, binaries, hiddenimports = [("static", "static")], [], []
 
@@ -53,6 +59,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=ICON,
 )
 
 coll = COLLECT(

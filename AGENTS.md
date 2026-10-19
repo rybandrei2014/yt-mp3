@@ -19,6 +19,8 @@ Runtime deps on PATH: `ffmpeg` (required for opus/m4a/mp3), a JS runtime — `no
 app.py               FastAPI backend + yt-dlp Python API + in-process job manager
 static/index.html    single-page UI (vanilla JS, SSE progress)
 config.json          optional (see config.example.json): browser cookies, port, max_concurrent, download_dir — GITIGNORED (personal), never commit
+icon.ico             Windows exe icon (generated from static/icon.png; regenerate: .venv\Scripts\python.exe tools\make_icons.py — needs Pillow)
+tools/make_icons.py  regenerates icon.ico; macOS icon.icns is built in CI (sips+iconutil from static/icon.png); static/icon.png also serves as browser favicon
 requirements.txt     loose pins | requirements.lock frozen (regenerate: pip freeze > requirements.lock)
 requirements-build.txt  release build deps (pyinstaller)
 yt-mp3.spec          PyInstaller spec (onedir; bundles static/, yt_dlp_ejs plugin + metadata)

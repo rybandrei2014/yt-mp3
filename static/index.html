@@ -59,7 +59,7 @@
     background: #171a21; border: 1px solid #2a2f3a; border-radius: 8px; font-size: .88rem;
   }
   .libRow .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .libRow img.cover {
+  img.cover {
     width: 40px; height: 40px; border-radius: 6px; object-fit: cover;
     flex-shrink: 0; background: #232833;
   }
@@ -199,6 +199,7 @@
 <div id="trimModal" class="modal">
   <div class="modal-box">
     <div class="modal-head">
+      <img id="trimCover" class="cover" alt="" style="display:none">
       <h3 id="trimTitle"></h3>
       <button id="trimExpandBtn" class="ghost small" title="Expand">⤢</button>
     </div>
@@ -542,6 +543,10 @@ function openTrim(item) {
   cctx.clearRect(0, 0, canvas.width, canvas.height);
   $('trimStart').value = '0:00'; $('trimEnd').value = '0:00';
   $('trimTitle').textContent = item.filename;
+  const cover = $('trimCover');
+  cover.style.display = 'block';
+  cover.onerror = () => { cover.style.display = 'none'; };
+  cover.src = `/api/library/${item.id}/cover`;
   $('trimResult').style.display = 'none';
   $('trimModal').style.display = 'flex';
   loadWaveformLocal(item.id);

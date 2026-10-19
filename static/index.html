@@ -60,6 +60,11 @@
   .libRow .dur { color: #8a8f98; font-size: .8rem; white-space: nowrap; }
   .libRow a { color: #7ec8ff; text-decoration: none; }
   #libEmpty { color: #8a8f98; font-size: .88rem; }
+  .spinner {
+    width: 22px; height: 22px; margin: 14px auto; border: 3px solid #2a2f3a;
+    border-top-color: #c9474c; border-radius: 50%; animation: spin .8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
   /* modal */
   .modal {
     display: none; position: fixed; inset: 0; background: rgba(0,0,0,.65);
@@ -377,10 +382,12 @@ function renderResults(items) {
 
 /* ---------- library ---------- */
 async function loadLibrary() {
+  const box = $('library');
+  box.innerHTML = '<div class="spinner"></div>';
+  $('libEmpty').style.display = 'none';
   try {
     const r = await fetch('/api/library');
     const {items} = await r.json();
-    const box = $('library');
     box.innerHTML = '';
     $('libEmpty').style.display = items.length ? 'none' : 'block';
     for (const it of items) {
@@ -399,7 +406,7 @@ async function loadLibrary() {
       row.append(name, dur, trimBtn, dl);
       box.appendChild(row);
     }
-  } catch (e) { /* ignore */ }
+  } catch (e) { box.innerHTML = ''; }
 }
 
 /* ---------- trim modal (local files) ---------- */

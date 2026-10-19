@@ -8,6 +8,7 @@ import sys
 import threading
 import urllib.request
 import uuid
+from bisect import bisect_right
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -267,12 +268,14 @@ def probe_duration(path: Path) -> float | None:
 
 
 @app.get("/api/library")
-def library(offset: int = 0, limit: int = 200):
+def library(after: str | None = None, limit: int = 200):
     limit = max(1, min(limit, 500))
     files = sorted(
         (f for f in DOWNLOADS_DIR.iterdir() if f.is_file() and f.suffix.lower() in AUDIO_EXTS),
         key=lambda p: p.name.lower(),
     )
+    start = bisect_right([f.name.lower() for f in files], after.lower()) if after else 0
+    page = files[start : start + limit]
     items = [
         {
             "id": file_id(f),
@@ -281,9 +284,10 @@ def library(offset: int = 0, limit: int = 200):
             "size": f.stat().st_size,
             "cover": f.with_suffix(".png").exists(),
         }
-        for f in files[offset : offset + limit]
+        for f in page
     ]
-    return {"items": items, "total": len(files), "offset": offset, "limit": limit}
+    nxt = page[-1].name if page and start + len(page) < len(files) else None
+    return {"items": items, "total": len(files), "next": nxt}
 
 
 def make_preview(source: Path, pid: str) -> str:

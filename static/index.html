@@ -292,7 +292,7 @@ $('dlBtn').onclick = async () => {
           $('save').append(c);
         }
         $('dlBtn').disabled = false;
-        loadLibrary(true);
+        refreshLibrary();
       } else if (j.status === 'error') {
         es.close();
         showError(j.error);
@@ -368,7 +368,7 @@ function watchGroup(groupId) {
       es.close();
       renderResults(g.items);
       $('plDlBtn').disabled = false;
-      loadLibrary(true);
+      refreshLibrary();
     }
   };
 }
@@ -395,9 +395,9 @@ function renderResults(items) {
   box.style.display = 'block';
 }
 
-/* ---------- library (paged, infinite scroll) ---------- */
+/* ---------- library (cursor-paged, infinite scroll) ---------- */
 const LIB_PAGE = 50;
-const lib = { offset: 0, total: 0, loading: false };
+const lib = { cursor: null, done: false, loading: false, stale: false };
 
 function libRow(it) {
   const row = document.createElement('div');
@@ -416,9 +416,14 @@ function libRow(it) {
   return row;
 }
 
-async function loadLibrary(reset = false) {
-  if (reset) { $('library').innerHTML = ''; lib.offset = 0; lib.total = 0; }
-  if (lib.loading || (lib.offset > 0 && lib.offset >= lib.total)) return;
+function resetLibrary() {
+  $('library').innerHTML = '';
+  lib.cursor = null; lib.done = false; lib.stale = false;
+}
+function refreshLibrary() { resetLibrary(); loadLibrary(); }
+
+async function loadLibrary() {
+  if (lib.loading || lib.done) return;
   lib.loading = true;
   const box = $('library');
   const spinner = document.createElement('div');
@@ -426,22 +431,31 @@ async function loadLibrary(reset = false) {
   box.appendChild(spinner);
   $('libEmpty').style.display = 'none';
   try {
-    const r = await fetch(`/api/library?offset=${lib.offset}&limit=${LIB_PAGE}`);
-    const {items, total} = await r.json();
+    const q = lib.cursor ? `&after=${encodeURIComponent(lib.cursor)}` : '';
+    const r = await fetch(`/api/library?limit=${LIB_PAGE}${q}`);
+    const {items, total, next} = await r.json();
     spinner.remove();
-    lib.total = total;
     for (const it of items) box.appendChild(libRow(it));
-    lib.offset += items.length;
+    lib.cursor = next;
+    lib.done = !next;
     $('libEmpty').style.display = total ? 'none' : 'block';
   } catch (e) { spinner.remove(); }
   lib.loading = false;
+  if ($('libSentinel').getBoundingClientRect().top < innerHeight) loadLibrary();
 }
 new IntersectionObserver((es) => { if (es[0].isIntersecting) loadLibrary(); })
   .observe($('libSentinel'));
 
 /* ---------- scroll to top ---------- */
 const toTopBtn = $('toTop');
-addEventListener('scroll', () => { toTopBtn.style.display = scrollY > 400 ? 'block' : 'none'; }, { passive: true });
+addEventListener('scroll', () => {
+  toTopBtn.style.display = scrollY > 400 ? 'block' : 'none';
+  if (scrollY < 50) {
+    if (lib.stale) { lib.stale = false; refreshLibrary(); }
+  } else {
+    lib.stale = true;
+  }
+}, { passive: true });
 toTopBtn.onclick = () => scrollTo({ top: 0, behavior: 'smooth' });
 
 /* ---------- trim modal (local files) ---------- */
@@ -704,14 +718,14 @@ $('trimCutBtn').onclick = async () => {
     a.textContent = res.filename;
     $('trimResult').append('Created: ', a);
     $('trimResult').style.display = 'block';
-    loadLibrary(true);
+    refreshLibrary();
   } catch (e) {
     $('trimResult').textContent = e.message;
     $('trimResult').style.display = 'block';
   } finally { $('trimCutBtn').disabled = false; }
 };
 
-loadLibrary(true);
+refreshLibrary();
 </script>
 </body>
 </html>

@@ -393,11 +393,14 @@ function plRowDom(i) {
   row.append(lab, pv);
   return row;
 }
-function plRender() {
+let plWin = { start: -1, end: -1 };
+function plRender(force = false) {
   const list = $('plList');
   const n = pl.entries.length;
   const start = Math.max(0, Math.floor(list.scrollTop / PL_ROW) - 6);
   const end = Math.min(n, start + Math.ceil(list.clientHeight / PL_ROW) + 12);
+  if (!force && start === plWin.start && end === plWin.end) return;
+  plWin = { start, end };
   const rows = $('plRows');
   rows.style.height = `${(end - start) * PL_ROW}px`;
   $('plPadTop').style.height = `${start * PL_ROW}px`;
@@ -412,7 +415,7 @@ $('plList').addEventListener('scroll', () => {
   if (plRaf) return;
   plRaf = requestAnimationFrame(() => { plRaf = 0; plRender(); });
 }, { passive: true });
-window.addEventListener('resize', () => { if ($('plModal').style.display === 'flex') plRender(); });
+window.addEventListener('resize', () => { if ($('plModal').style.display === 'flex') plRender(true); });
 $('plList').addEventListener('change', ev => {
   const i = +ev.target.dataset.i;
   if (!Number.isInteger(i)) return;
@@ -427,9 +430,9 @@ function openPlaylistModal(info) {
   pl.entries = info.entries;
   pl.sel = new Set();
   pl.entries.forEach((e, i) => { if (!/^\[(deleted|private) video\]/i.test(e.title || '')) pl.sel.add(i); });
-  $('plList').scrollTop = 0;
   $('plModal').style.display = 'flex';
-  plRender();
+  $('plList').scrollTop = 0;
+  plRender(true);
   updatePlDlCount();
 }
 function selectedUrls() {
@@ -438,8 +441,8 @@ function selectedUrls() {
 function updatePlDlCount() {
   $('plDlBtn').textContent = `Download (${pl.sel.size})`;
 }
-$('selAll').onclick = () => { pl.sel = new Set(pl.entries.map((_, i) => i)); plRender(); updatePlDlCount(); };
-$('selNone').onclick = () => { pl.sel = new Set(); plRender(); updatePlDlCount(); };
+$('selAll').onclick = () => { pl.sel = new Set(pl.entries.map((_, i) => i)); plRender(true); updatePlDlCount(); };
+$('selNone').onclick = () => { pl.sel = new Set(); plRender(true); updatePlDlCount(); };
 $('plCancel').onclick = () => { pvStop(); $('plModal').style.display = 'none'; };
 
 /* ---------- pre-download preview (playlist rows) ---------- */

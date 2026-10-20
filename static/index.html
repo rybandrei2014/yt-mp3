@@ -397,8 +397,18 @@ let plWin = { start: -1, end: -1 };
 function plRender(force = false) {
   const list = $('plList');
   const n = pl.entries.length;
+  if (force) {
+    // The scroller's height depends on its content, and its content depends on the
+    // window — so first pad to the full list height (box hits max-height), then measure.
+    $('plPadTop').style.height = '0px';
+    $('plPadBottom').style.height = `${n * PL_ROW}px`;
+    $('plRows').style.height = '0px';
+    $('plRows').innerHTML = '';
+    plWin = { start: -1, end: -1 };
+  }
+  const h = list.clientHeight || Math.round(innerHeight * 0.6);
   const start = Math.max(0, Math.floor(list.scrollTop / PL_ROW) - 6);
-  const end = Math.min(n, start + Math.ceil(list.clientHeight / PL_ROW) + 12);
+  const end = Math.min(n, start + Math.ceil(h / PL_ROW) + 12);
   if (!force && start === plWin.start && end === plWin.end) return;
   plWin = { start, end };
   const rows = $('plRows');

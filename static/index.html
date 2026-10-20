@@ -609,7 +609,7 @@ $('delConfirm').onclick = async () => {
 };
 
 /* ---------- trim modal (local files) ---------- */
-const trim = { start: 0, end: 0, duration: 0, peaks: null, step: 1, buffer: null, loaded: false, loading: false, file: null };
+const trim = { start: 0, end: 0, duration: 0, peaks: null, step: 1, hover: null, buffer: null, loaded: false, loading: false, file: null };
 let audioCtx = null, playSource = null;
 let playhead = null, playStartCtx = 0, playStartOffset = 0, rafId = null;
 const canvas = $('wave'), cctx = canvas.getContext('2d');
@@ -620,7 +620,7 @@ function openTrim(item) {
   stopTrimPlay();
   playhead = null;
   trim.file = item;
-  trim.loaded = false; trim.buffer = null; trim.peaks = null;
+  trim.loaded = false; trim.buffer = null; trim.peaks = null; trim.hover = null;
   trim.start = 0; trim.end = 0; trim.duration = 0;
   cctx.clearRect(0, 0, canvas.width, canvas.height);
   $('trimStart').value = '0:00'; $('trimEnd').value = '0:00';
@@ -721,10 +721,15 @@ function drawWave() {
   const sx = trim.start / trim.duration * W, ex = trim.end / trim.duration * W;
   const slot = W / n;
   const bw = Math.max(1 * dpr, Math.min(3 * dpr, Math.floor(slot * 0.5)));
+  if (trim.hover != null) {
+    cctx.fillStyle = 'rgba(255,255,255,.07)';
+    cctx.fillRect(trim.hover * slot, 0, slot, waveH);
+  }
   for (let i = 0; i < n; i++) {
     const [min, max] = trim.peaks[i];
     const cx = (i + 0.5) * slot;
-    cctx.fillStyle = (cx >= sx && cx <= ex) ? '#93343a' : '#48484a';
+    const inSel = cx >= sx && cx <= ex;
+    cctx.fillStyle = i === trim.hover ? (inSel ? '#e06068' : '#e6e6e6') : (inSel ? '#93343a' : '#48484a');
     const y1 = mid - max * mid * 0.98, y2 = mid - min * mid * 0.98;
     cctx.fillRect(cx - bw / 2, y1, bw, Math.max(1 * dpr, y2 - y1));
   }
@@ -764,8 +769,13 @@ canvas.addEventListener('pointerdown', e => {
   canvas.setPointerCapture(e.pointerId);
 });
 canvas.addEventListener('pointermove', e => {
-  if (!drag) return;
   const x = e.clientX - canvas.getBoundingClientRect().left;
+  if (!drag) {
+    if (!trim.loaded || !trim.peaks) return;
+    const idx = Math.max(0, Math.min(trim.peaks.length - 1, Math.floor(x / canvas.clientWidth * trim.peaks.length)));
+    if (idx !== trim.hover) { trim.hover = idx; drawWave(); }
+    return;
+  }
   if (!drag.moved) {
     if (Math.abs(x - drag.startX) <= 4) return;
     drag.moved = true;
@@ -788,6 +798,9 @@ canvas.addEventListener('pointerup', e => {
     seekAndPlay(t);
   }
   drag = null;
+});
+canvas.addEventListener('pointerleave', () => {
+  if (trim.hover != null) { trim.hover = null; drawWave(); }
 });
 function applyDrag(x) {
   const w = canvas.clientWidth;

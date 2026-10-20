@@ -132,6 +132,7 @@
   .entry img { width: 56px; height: 32px; object-fit: cover; border-radius: 4px; flex-shrink: 0; background: #232833; }
   .entry .t { font-size: .9rem; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .entry .d { font-size: .8rem; color: #8a8f98; white-space: nowrap; }
+  .entry .pv { width: 34px; padding: 0; flex-shrink: 0; }
   .modal-actions { display: flex; gap: 8px; margin-top: 12px; }
   .modal-actions button { height: var(--ctl-sm); padding: 0 16px; font-size: .9rem; }
   .modal-actions .spacer { flex: 1; }
@@ -370,6 +371,7 @@ function openPlaylistModal(info) {
   $('plTitle').textContent = info.title || 'Playlist';
   $('plMeta').textContent = `${info.count} videos${info.uploader ? ' · ' + info.uploader : ''}`;
   const list = $('plList');
+  pvStop();
   list.innerHTML = '';
   for (const e of info.entries) {
     const label = document.createElement('label');
@@ -380,7 +382,10 @@ function openPlaylistModal(info) {
     if (e.thumbnail) img.src = e.thumbnail; else img.style.visibility = 'hidden';
     const t = document.createElement('div'); t.className = 't'; t.textContent = e.title; t.title = e.title;
     const d = document.createElement('div'); d.className = 'd'; d.textContent = fmtDur(e.duration);
-    label.append(cb, img, t, d);
+    const pv = document.createElement('button');
+    pv.type = 'button'; pv.className = 'ghost small pv'; pv.textContent = '▶'; pv.title = 'Preview';
+    pv.onclick = (ev) => { ev.preventDefault(); previewEntry(e.url, pv); };
+    label.append(cb, img, t, d, pv);
     list.appendChild(label);
   }
   updatePlDlCount();
@@ -395,10 +400,42 @@ function updatePlDlCount() {
 $('plList').addEventListener('change', updatePlDlCount);
 $('selAll').onclick = () => { document.querySelectorAll('#plList input').forEach(cb => cb.checked = true); updatePlDlCount(); };
 $('selNone').onclick = () => { document.querySelectorAll('#plList input').forEach(cb => cb.checked = false); updatePlDlCount(); };
-$('plCancel').onclick = () => { $('plModal').style.display = 'none'; };
+$('plCancel').onclick = () => { pvStop(); $('plModal').style.display = 'none'; };
+
+/* ---------- pre-download preview (playlist rows) ---------- */
+let pvAudio = null, pvBtn = null;
+function pvStop() {
+  if (pvAudio) { pvAudio.pause(); pvAudio.src = ''; pvAudio = null; }
+  if (pvBtn) { pvBtn.textContent = '▶'; pvBtn.title = 'Preview'; pvBtn.disabled = false; pvBtn = null; }
+}
+async function previewEntry(url, btn) {
+  const same = pvBtn === btn;
+  pvStop();
+  if (same) return;
+  pvBtn = btn;
+  btn.disabled = true; btn.textContent = '…'; btn.title = 'loading preview…';
+  try {
+    const r = await fetch('/api/trim-preview', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, clip: 15 })
+    });
+    if (!r.ok) throw new Error((await r.json()).detail || r.status);
+    const { id } = await r.json();
+    if (pvBtn !== btn) return;
+    pvAudio = new Audio(`/api/trim/${id}`);
+    pvAudio.onended = pvStop;
+    pvAudio.onerror = pvStop;
+    btn.disabled = false; btn.textContent = '⏸'; btn.title = 'Stop preview';
+    await pvAudio.play();
+  } catch (e) {
+    pvStop();
+    alert(`Preview failed: ${e.message}`);
+  }
+}
 
 $('plDlBtn').onclick = async () => {
   hideError();
+  pvStop();
   const urls = selectedUrls();
   if (!urls.length) return;
   $('plDlBtn').disabled = true;
@@ -631,6 +668,7 @@ function setWaveMsg(m) { $('waveMsg').textContent = m; $('waveMsg').style.displa
 
 function openTrim(item) {
   stopTrimPlay();
+  pvStop();
   playhead = null;
   trim.file = item;
   trim.loaded = false; trim.buffer = null; trim.peaks = null; trim.hover = null;

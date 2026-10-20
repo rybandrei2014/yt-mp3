@@ -142,6 +142,7 @@ class TrimPreviewRequest(BaseModel):
     file_id: str | None = None
     trim: TrimRange | None = None
     mp3: bool = False
+    clip: float | None = None
 
 
 class TrimLocalRequest(BaseModel):
@@ -355,6 +356,104 @@ def make_preview(source: Path, pid: str) -> str:
     return str(out)
 
 
+def make_full_url_preview(url: str) -> dict:
+    flat_opts = base_ydl_opts()
+    flat_opts["extract_flat"] = "in_playlist"
+    try:
+        with yt_dlp.YoutubeDL(flat_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+    except yt_dlp.utils.DownloadError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    if info.get("_type") == "playlist" and info.get("entries"):
+        info = info["entries"][0]
+    vid = info.get("id")
+    if not vid:
+        raise HTTPException(status_code=422, detail="could not resolve video id")
+    full = PREVIEW_DIR / f".preview_{vid}.mp3"
+    if not full.exists():
+        sweep_temp_files()
+        opts = base_ydl_opts()
+        opts.update(
+            {
+                "format": "worstaudio/worst",
+                "paths": {"home": str(PREVIEW_DIR)},
+                "outtmpl": f".preview_{vid}.%(ext)s",
+                "postprocessors": [
+                    {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": 64}
+                ],
+            }
+        )
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                ydl.extract_info(url, download=True)
+        except yt_dlp.utils.DownloadError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+        if not full.exists():
+            raise HTTPException(status_code=422, detail="could not download preview source")
+    trim_previews[vid] = str(full)
+    return {"id": vid, "duration": info.get("duration")}
+
+
+def make_url_clip(url: str, secs: float) -> dict:
+    """First `secs` of a remote track without pulling the whole file.
+
+    yt-dlp --download-sections yields EMPTY files on YouTube DASH, and stream URLs
+    resolved inside a cookie'd session cannot be fetched outside it (403, even with
+    the same jar — googlevideo.com is not under the cookie domain). So: extract
+    WITHOUT browser cookies, Range-fetch the head of the cheapest audio stream,
+    then `ffmpeg -t N -c copy` that local head. Falls back to the full worstaudio
+    preview for videos that do need cookies (age/private).
+    """
+    secs = max(1.0, min(secs, 120.0))
+    try:
+        opts = base_ydl_opts()
+        opts.pop("cookiesfrombrowser", None)
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+        if info.get("_type") == "playlist" and info.get("entries"):
+            info = info["entries"][0]
+        vid = info.get("id")
+        if not vid:
+            raise LookupError("could not resolve video id")
+        fmts = [f for f in info.get("formats") or [] if f.get("acodec") not in (None, "none") and f.get("url")]
+        fmts.sort(key=lambda f: f.get("tbr") or 0)
+        pick = next((f for f in fmts if f.get("ext") == "m4a"), None) or (fmts[0] if fmts else None)
+        if not pick:
+            raise LookupError("no audio stream found")
+        ext = pick.get("ext") or "m4a"
+        pid = f"{vid}_{int(secs)}s"
+        out = PREVIEW_DIR / f".preview_{pid}.{ext}"
+        if out.exists():
+            trim_previews[pid] = str(out)
+            return {"id": pid, "duration": secs}
+        sweep_temp_files()
+        budget = int((pick.get("tbr") or 128) * 1024 / 8 * secs * 1.3) + 96 * 1024
+        headers = {k: v for k, v in (info.get("http_headers") or {}).items() if k.lower() != "accept-encoding"}
+        headers["Range"] = f"bytes=0-{budget - 1}"
+        req = urllib.request.Request(pick["url"], headers=headers)
+        with urllib.request.urlopen(req, timeout=30) as r:
+            chunk = r.read(budget)
+        if not chunk:
+            raise LookupError("empty stream response")
+        head = PREVIEW_DIR / f".preview_{pid}_head.{ext}"
+        head.write_bytes(chunk)
+        r = subprocess.run(
+            [shutil.which("ffmpeg"), "-y", "-loglevel", "error", "-i", str(head),
+             "-t", str(secs), "-c", "copy", str(out)],
+            capture_output=True, text=True,
+        )
+        head.unlink(missing_ok=True)
+        if not out.exists():
+            raise LookupError(f"clip failed: {r.stderr.strip()[:200]}")
+        trim_previews[pid] = str(out)
+        duration = info.get("duration")
+        return {"id": pid, "duration": min(secs, duration) if duration else secs}
+    except (yt_dlp.utils.DownloadError, LookupError, OSError) as e:
+        if not CONFIG.get("browser"):
+            raise HTTPException(status_code=422, detail=f"preview failed: {e}")
+        return make_full_url_preview(url)
+
+
 @app.post("/api/trim-preview")
 def trim_preview(req: TrimPreviewRequest):
     if req.trim and (req.trim.start < 0 or req.trim.end <= req.trim.start):
@@ -386,41 +485,9 @@ def trim_preview(req: TrimPreviewRequest):
         return {"id": pid, "duration": probe_duration(src)}
     if not req.url:
         raise HTTPException(status_code=422, detail="url or file_id required")
-    flat_opts = base_ydl_opts()
-    flat_opts["extract_flat"] = "in_playlist"
-    try:
-        with yt_dlp.YoutubeDL(flat_opts) as ydl:
-            info = ydl.extract_info(req.url, download=False)
-    except yt_dlp.utils.DownloadError as e:
-        raise HTTPException(status_code=422, detail=str(e))
-    if info.get("_type") == "playlist" and info.get("entries"):
-        info = info["entries"][0]
-    vid = info.get("id")
-    if not vid:
-        raise HTTPException(status_code=422, detail="could not resolve video id")
-    full = PREVIEW_DIR / f".preview_{vid}.mp3"
-    if not full.exists():
-        sweep_temp_files()
-        opts = base_ydl_opts()
-        opts.update(
-            {
-                "format": "worstaudio/worst",
-                "paths": {"home": str(PREVIEW_DIR)},
-                "outtmpl": f".preview_{vid}.%(ext)s",
-                "postprocessors": [
-                    {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": 64}
-                ],
-            }
-        )
-        try:
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                ydl.extract_info(req.url, download=True)
-        except yt_dlp.utils.DownloadError as e:
-            raise HTTPException(status_code=422, detail=str(e))
-        if not full.exists():
-            raise HTTPException(status_code=422, detail="could not download preview source")
-    trim_previews[vid] = str(full)
-    return {"id": vid, "duration": info.get("duration")}
+    if req.clip:
+        return make_url_clip(req.url, req.clip)
+    return make_full_url_preview(req.url)
 
 
 def fmt_compact(seconds: float) -> str:

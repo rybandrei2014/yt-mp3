@@ -609,7 +609,7 @@ $('delConfirm').onclick = async () => {
 };
 
 /* ---------- trim modal (local files) ---------- */
-const trim = { start: 0, end: 0, duration: 0, peaks: null, buffer: null, loaded: false, loading: false, file: null };
+const trim = { start: 0, end: 0, duration: 0, peaks: null, step: 1, buffer: null, loaded: false, loading: false, file: null };
 let audioCtx = null, playSource = null;
 let playhead = null, playStartCtx = 0, playStartOffset = 0, rafId = null;
 const canvas = $('wave'), cctx = canvas.getContext('2d');
@@ -674,16 +674,24 @@ function sizeCanvas() {
   const dpr = window.devicePixelRatio || 1;
   canvas.width = Math.floor(canvas.clientWidth * dpr);
   canvas.height = Math.floor(canvas.clientHeight * dpr);
-  if (trim.buffer) computePeaks(canvas.width);
+  if (trim.buffer) computePeaks(canvas.clientWidth);
 }
-function computePeaks(n) {
+const WAVE_STEPS = [0.05, 0.1, 0.2, 0.25, 0.5, 1, 1.5, 2, 3, 5, 10, 15, 30];
+function pickStep(duration, px) {
+  for (const s of WAVE_STEPS) if (duration / s <= px / 2) return s;
+  return WAVE_STEPS[WAVE_STEPS.length - 1];
+}
+function computePeaks(px) {
   const data = trim.buffer.getChannelData(0);
-  const block = data.length / n;
+  const sr = trim.buffer.sampleRate, dur = trim.buffer.duration;
+  const step = trim.step = pickStep(dur, px);
+  const n = Math.max(1, Math.ceil(dur / step));
+  const spb = Math.max(1, Math.round(sr * step));
   const peaks = new Array(n);
   for (let i = 0; i < n; i++) {
     let min = 1, max = -1;
-    const start = Math.floor(i * block);
-    const end = Math.min(data.length, Math.floor((i + 1) * block));
+    const start = i * spb;
+    const end = Math.min(data.length, start + spb);
     for (let j = start; j < end; j++) {
       const v = data[j];
       if (v < min) min = v;
@@ -711,13 +719,14 @@ function drawWave() {
   if (!trim.peaks) return;
   const n = trim.peaks.length;
   const sx = trim.start / trim.duration * W, ex = trim.end / trim.duration * W;
-  const bw = Math.max(1, Math.ceil(W / n));
+  const slot = W / n;
+  const bw = Math.max(1 * dpr, Math.min(3 * dpr, Math.floor(slot * 0.5)));
   for (let i = 0; i < n; i++) {
     const [min, max] = trim.peaks[i];
-    const x = i * W / n;
-    cctx.fillStyle = (x >= sx && x <= ex) ? '#93343a' : '#48484a';
+    const cx = (i + 0.5) * slot;
+    cctx.fillStyle = (cx >= sx && cx <= ex) ? '#93343a' : '#48484a';
     const y1 = mid - max * mid * 0.98, y2 = mid - min * mid * 0.98;
-    cctx.fillRect(x, y1, bw, Math.max(1, y2 - y1));
+    cctx.fillRect(cx - bw / 2, y1, bw, Math.max(1 * dpr, y2 - y1));
   }
   // time ruler
   const iv = tickInterval(trim.duration);

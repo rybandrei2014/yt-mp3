@@ -54,6 +54,13 @@
   #results a { color: #7ec8ff; }
   #results .fail { color: #e8b0b3; }
   #library { margin-top: 10px; }
+  #libSearchRow { display: none; gap: 8px; margin-top: 4px; }
+  #libSearch {
+    flex: 1; padding: 9px 12px 9px 36px; border-radius: 8px; border: 1px solid #2a2f3a;
+    background-color: #171a21; color: #e6e6e6; font-size: .95rem;
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'%20fill='none'%20stroke='%238a8f98'%20stroke-width='2.5'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Ccircle%20cx='11'%20cy='11'%20r='7'/%3E%3Cpath%20d='M20%2020l-4.35-4.35'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: 12px center; background-size: 15px 15px;
+  }
   .libRow {
     display: flex; align-items: center; gap: 10px; padding: 9px 12px; margin-bottom: 6px;
     background: #171a21; border: 1px solid #2a2f3a; border-radius: 8px; font-size: .88rem;
@@ -165,6 +172,10 @@
   <div id="results"></div>
 
   <h2>Library</h2>
+  <div class="row" id="libSearchRow">
+    <input id="libSearch" type="search" placeholder="Search library by filename..." autocomplete="off">
+    <button id="libSearchClear" class="ghost small" style="display:none">✕</button>
+  </div>
   <div id="library"></div>
   <div id="libEmpty" style="display:none">Nothing downloaded yet.</div>
   <div id="libSentinel"></div>
@@ -416,7 +427,20 @@ function renderResults(items) {
 
 /* ---------- library (cursor-paged, infinite scroll) ---------- */
 const LIB_PAGE = 50;
-const lib = { cursor: null, total: 0, firstKey: null, done: false, loading: false, stale: false };
+const lib = { cursor: null, total: 0, firstKey: null, done: false, loading: false, stale: false, q: '' };
+function libQs() {
+  let qs = `limit=${LIB_PAGE}`;
+  if (lib.cursor) qs += `&after=${encodeURIComponent(lib.cursor)}`;
+  if (lib.q) qs += `&q=${encodeURIComponent(lib.q)}`;
+  return qs;
+}
+function showLibSearch() {
+  $('libSearchRow').style.display = (lib.total || lib.q) ? 'flex' : 'none';
+}
+function showLibEmpty() {
+  $('libEmpty').textContent = lib.q ? `No matches for “${lib.q}”.` : 'Nothing downloaded yet.';
+  $('libEmpty').style.display = lib.total ? 'none' : 'block';
+}
 
 function libRow(it) {
   const row = document.createElement('div');
@@ -450,14 +474,15 @@ async function silentRefresh() {
   if (lib.loading) return;
   lib.loading = true;
   try {
-    const r = await fetch(`/api/library?limit=${LIB_PAGE}`);
+    const r = await fetch(`/api/library?${libQs()}`);
     const {items, total, next} = await r.json();
     const key = items.map(i => i.filename).join('\n');
     if (key !== lib.firstKey || total !== lib.total) {
       $('library').innerHTML = '';
       for (const it of items) $('library').appendChild(libRow(it));
       lib.cursor = next; lib.done = !next; lib.firstKey = key; lib.total = total;
-      $('libEmpty').style.display = total ? 'none' : 'block';
+      showLibSearch();
+      showLibEmpty();
       if ($('libSentinel').getBoundingClientRect().top < innerHeight) loadLibrary();
     }
   } catch (e) { /* keep current list */ }
@@ -473,8 +498,7 @@ async function loadLibrary() {
   box.appendChild(spinner);
   $('libEmpty').style.display = 'none';
   try {
-    const q = lib.cursor ? `&after=${encodeURIComponent(lib.cursor)}` : '';
-    const r = await fetch(`/api/library?limit=${LIB_PAGE}${q}`);
+    const r = await fetch(`/api/library?${libQs()}`);
     const {items, total, next} = await r.json();
     spinner.remove();
     const first = !lib.cursor;
@@ -483,13 +507,37 @@ async function loadLibrary() {
     lib.done = !next;
     lib.total = total;
     if (first) lib.firstKey = items.map(i => i.filename).join('\n');
-    $('libEmpty').style.display = total ? 'none' : 'block';
+    showLibSearch();
+    showLibEmpty();
   } catch (e) { spinner.remove(); }
   lib.loading = false;
   if ($('libSentinel').getBoundingClientRect().top < innerHeight) loadLibrary();
 }
 new IntersectionObserver((es) => { if (es[0].isIntersecting) loadLibrary(); })
   .observe($('libSentinel'));
+
+/* ---------- library search ---------- */
+let libSearchTimer = null;
+$('libSearch').addEventListener('input', () => {
+  const v = $('libSearch').value.trim();
+  $('libSearchClear').style.display = v ? 'block' : 'none';
+  clearTimeout(libSearchTimer);
+  libSearchTimer = setTimeout(() => {
+    if (v === lib.q) return;
+    lib.q = v;
+    resetLibrary();
+    loadLibrary();
+  }, 250);
+});
+$('libSearch').addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { $('libSearch').value = ''; $('libSearchClear').style.display = 'none'; }
+});
+$('libSearchClear').onclick = () => {
+  $('libSearch').value = '';
+  $('libSearchClear').style.display = 'none';
+  clearTimeout(libSearchTimer);
+  if (lib.q) { lib.q = ''; resetLibrary(); loadLibrary(); }
+};
 
 /* ---------- scroll to top ---------- */
 const toTopBtn = $('toTop');
@@ -522,7 +570,8 @@ $('delConfirm').onclick = async () => {
     it._row.remove();
     lib.total = Math.max(0, lib.total - 1);
     if (lib.firstKey && lib.firstKey.split('\n').includes(it.filename)) lib.firstKey = null;
-    $('libEmpty').style.display = lib.total ? 'none' : 'block';
+    showLibSearch();
+    showLibEmpty();
   } catch (e) { alert(`Delete failed: ${e.message}`); }
 };
 

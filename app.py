@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import unicodedata
 import urllib.request
 import uuid
 from bisect import bisect_right
@@ -268,13 +269,20 @@ def probe_duration(path: Path) -> float | None:
     return dur
 
 
+def search_key(name: str) -> str:
+    return unicodedata.normalize("NFKD", name).casefold()
+
+
 @app.get("/api/library")
-def library(after: str | None = None, limit: int = 200):
+def library(after: str | None = None, limit: int = 200, q: str | None = None):
     limit = max(1, min(limit, 500))
     files = sorted(
         (f for f in DOWNLOADS_DIR.iterdir() if f.is_file() and f.suffix.lower() in AUDIO_EXTS),
         key=lambda p: p.name.lower(),
     )
+    if q:
+        needle = search_key(q).strip()
+        files = [f for f in files if needle in search_key(f.name)]
     start = bisect_right([f.name.lower() for f in files], after.lower()) if after else 0
     page = files[start : start + limit]
     items = [

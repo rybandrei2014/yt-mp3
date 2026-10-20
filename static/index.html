@@ -125,9 +125,10 @@
   #plList { overflow-y: auto; flex: 1; margin: 10px 0; }
   .entry {
     display: flex; align-items: center; gap: 10px; padding: 5px 10px; margin-bottom: 6px;
-    min-height: var(--ctl); border-radius: 8px; cursor: pointer; border: 1px solid transparent;
+    min-height: var(--ctl); border-radius: 8px; border: 1px solid transparent;
   }
   .entry:hover { background: #1d222c; }
+  .entry .lab { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; cursor: pointer; }
   .entry:has(input:checked) { border-color: #3a4150; }
   .entry img { width: 56px; height: 32px; object-fit: cover; border-radius: 4px; flex-shrink: 0; background: #232833; }
   .entry .t { font-size: .9rem; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -374,8 +375,10 @@ function openPlaylistModal(info) {
   pvStop();
   list.innerHTML = '';
   for (const e of info.entries) {
-    const label = document.createElement('label');
-    label.className = 'entry';
+    const row = document.createElement('div');
+    row.className = 'entry';
+    const lab = document.createElement('label');
+    lab.className = 'lab';
     const cb = document.createElement('input');
     cb.type = 'checkbox'; cb.checked = true; cb.dataset.url = e.url;
     const img = document.createElement('img');
@@ -384,9 +387,10 @@ function openPlaylistModal(info) {
     const d = document.createElement('div'); d.className = 'd'; d.textContent = fmtDur(e.duration);
     const pv = document.createElement('button');
     pv.type = 'button'; pv.className = 'ghost small pv'; pv.textContent = '▶'; pv.title = 'Preview';
-    pv.onclick = (ev) => { ev.preventDefault(); previewEntry(e.url, pv); };
-    label.append(cb, img, t, d, pv);
-    list.appendChild(label);
+    pv.onclick = () => previewEntry(e.url, pv);
+    lab.append(cb, img, t, d);
+    row.append(lab, pv);
+    list.appendChild(row);
   }
   updatePlDlCount();
   $('plModal').style.display = 'flex';
@@ -403,15 +407,20 @@ $('selNone').onclick = () => { document.querySelectorAll('#plList input').forEac
 $('plCancel').onclick = () => { pvStop(); $('plModal').style.display = 'none'; };
 
 /* ---------- pre-download preview (playlist rows) ---------- */
-let pvAudio = null, pvBtn = null;
+let pvAudio = null, pvBtn = null, pvToken = 0;
 function pvStop() {
-  if (pvAudio) { pvAudio.pause(); pvAudio.src = ''; pvAudio = null; }
+  pvToken++;
+  if (pvAudio) {
+    pvAudio.onended = null; pvAudio.onerror = null;
+    pvAudio.pause(); pvAudio.src = ''; pvAudio = null;
+  }
   if (pvBtn) { pvBtn.textContent = '▶'; pvBtn.title = 'Preview'; pvBtn.disabled = false; pvBtn = null; }
 }
 async function previewEntry(url, btn) {
-  const same = pvBtn === btn;
+  const playing = pvBtn === btn;
   pvStop();
-  if (same) return;
+  if (playing) return;
+  const token = pvToken;
   pvBtn = btn;
   btn.disabled = true; btn.textContent = '…'; btn.title = 'loading preview…';
   try {
@@ -421,15 +430,16 @@ async function previewEntry(url, btn) {
     });
     if (!r.ok) throw new Error((await r.json()).detail || r.status);
     const { id } = await r.json();
-    if (pvBtn !== btn) return;
-    pvAudio = new Audio(`/api/trim/${id}`);
-    pvAudio.onended = pvStop;
-    pvAudio.onerror = pvStop;
+    if (token !== pvToken) return;
+    const a = new Audio(`/api/trim/${id}`);
+    a.onended = () => { if (token === pvToken) pvStop(); };
+    a.onerror = () => { if (token === pvToken) pvStop(); };
+    pvAudio = a;
     btn.disabled = false; btn.textContent = '⏸'; btn.title = 'Stop preview';
-    await pvAudio.play();
+    await a.play();
   } catch (e) {
-    pvStop();
-    alert(`Preview failed: ${e.message}`);
+    if (token === pvToken) pvStop();
+    if (e && e.name !== 'AbortError') alert(`Preview failed: ${e.message}`);
   }
 }
 

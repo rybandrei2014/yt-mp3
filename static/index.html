@@ -435,10 +435,10 @@ function renderResults(items) {
 
 /* ---------- library (cursor-paged, infinite scroll) ---------- */
 const LIB_PAGE = 50;
-const lib = { cursor: null, total: 0, firstKey: null, done: false, loading: false, stale: false, q: '' };
-function libQs() {
+const lib = { cursor: null, total: 0, firstKey: null, done: false, loading: false, stale: false, q: '', gen: 0 };
+function libQs(useCursor = true) {
   let qs = `limit=${LIB_PAGE}`;
-  if (lib.cursor) qs += `&after=${encodeURIComponent(lib.cursor)}`;
+  if (useCursor && lib.cursor) qs += `&after=${encodeURIComponent(lib.cursor)}`;
   if (lib.q) qs += `&q=${encodeURIComponent(lib.q)}`;
   return qs;
 }
@@ -474,6 +474,7 @@ function libRow(it) {
 
 function resetLibrary() {
   $('library').innerHTML = '';
+  lib.gen++;
   lib.cursor = null; lib.firstKey = null; lib.done = false; lib.stale = false;
 }
 function refreshLibrary() { resetLibrary(); loadLibrary(); }
@@ -488,20 +489,23 @@ function reloadLibrary() {
 async function silentRefresh() {
   if (lib.loading) return;
   lib.loading = true;
+  const gen = ++lib.gen;
   try {
-    const r = await fetch(`/api/library?${libQs()}`);
+    const r = await fetch(`/api/library?${libQs(false)}`);
     const {items, total, next} = await r.json();
-    const key = items.map(i => i.filename).join('\n');
-    if (key !== lib.firstKey || total !== lib.total) {
-      const box = $('library');
-      box.innerHTML = '';
-      const frag = document.createDocumentFragment();
-      for (const it of items) frag.appendChild(libRow(it));
-      box.appendChild(frag);
-      lib.cursor = next; lib.done = !next; lib.firstKey = key; lib.total = total;
-      showLibSearch();
-      showLibEmpty();
-      if ($('libSentinel').getBoundingClientRect().top < innerHeight) loadLibrary();
+    if (gen === lib.gen) {
+      const key = items.map(i => i.filename).join('\n');
+      if (key !== lib.firstKey || total !== lib.total) {
+        const box = $('library');
+        box.innerHTML = '';
+        const frag = document.createDocumentFragment();
+        for (const it of items) frag.appendChild(libRow(it));
+        box.appendChild(frag);
+        lib.cursor = next; lib.done = !next; lib.firstKey = key; lib.total = total;
+        showLibSearch();
+        showLibEmpty();
+        if ($('libSentinel').getBoundingClientRect().top < innerHeight) loadLibrary();
+      }
     }
   } catch (e) { /* keep current list */ }
   lib.loading = false;
@@ -510,25 +514,30 @@ async function silentRefresh() {
 async function loadLibrary() {
   if (lib.loading || lib.done) return;
   lib.loading = true;
+  const gen = lib.gen;
   $('libSpinner').style.display = 'block';
   $('libEmpty').style.display = 'none';
   try {
     const r = await fetch(`/api/library?${libQs()}`);
     const {items, total, next} = await r.json();
-    const box = $('library');
-    const frag = document.createDocumentFragment();
-    for (const it of items) frag.appendChild(libRow(it));
-    box.appendChild(frag);
-    const first = !lib.cursor;
-    lib.cursor = next;
-    lib.done = !next;
-    lib.total = total;
-    if (first) lib.firstKey = items.map(i => i.filename).join('\n');
-    showLibSearch();
-    showLibEmpty();
+    if (gen === lib.gen) {
+      const box = $('library');
+      const frag = document.createDocumentFragment();
+      for (const it of items) frag.appendChild(libRow(it));
+      box.appendChild(frag);
+      const first = !lib.cursor;
+      lib.cursor = next;
+      lib.done = !next;
+      lib.total = total;
+      if (first) lib.firstKey = items.map(i => i.filename).join('\n');
+      showLibSearch();
+      showLibEmpty();
+    }
   } catch (e) { }
   $('libSpinner').style.display = 'none';
   lib.loading = false;
+  if (gen !== lib.gen) return;
+  if (lib.stale && scrollY < 50) { lib.stale = false; silentRefresh(); return; }
   if ($('libSentinel').getBoundingClientRect().top < innerHeight) loadLibrary();
 }
 new IntersectionObserver((es) => { if (es[0].isIntersecting) loadLibrary(); })
@@ -561,7 +570,7 @@ const toTopBtn = $('toTop');
 addEventListener('scroll', () => {
   toTopBtn.style.display = scrollY > 400 ? 'block' : 'none';
   if (scrollY < 50) {
-    if (lib.stale) { lib.stale = false; silentRefresh(); }
+    if (lib.stale && !lib.loading) { lib.stale = false; silentRefresh(); }
   } else {
     lib.stale = true;
   }

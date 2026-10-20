@@ -7,7 +7,7 @@
 <link rel="icon" type="image/png" href="/icon.png">
 <link rel="apple-touch-icon" href="/icon.png">
 <style>
-  :root { color-scheme: dark; --ctl: 44px; --ctl-sm: 32px; }
+  :root { color-scheme: dark; --ctl: 44px; --ctl-sm: 32px; --link: #ef8a8f; }
   * { box-sizing: border-box; }
   html { scrollbar-gutter: stable; overflow-y: scroll; }
   body {
@@ -15,14 +15,17 @@
     font-family: system-ui, sans-serif; background: #0f1115; color: #e6e6e6;
   }
   main { width: 100%; max-width: 640px; padding: 40px 20px; }
+  a { color: var(--link); }
   h1 { font-size: 1.6rem; margin: 0 0 4px; }
   h2 { font-size: 1.1rem; margin: 30px 0 10px; }
   .sub { color: #8a8f98; font-size: .9rem; margin-bottom: 24px; }
   .row { display: flex; gap: 8px; }
   input[type=url] {
-    flex: 1; height: var(--ctl); padding: 0 14px; border-radius: 8px; border: 1px solid #2a2f3a;
+    width: 100%; height: var(--ctl); padding: 0 104px 0 14px; border-radius: 8px; border: 1px solid #2a2f3a;
     background: #171a21; color: #e6e6e6; font-size: 1rem;
   }
+  #urlRow { position: relative; }
+  #previewBtn { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); padding: 0 16px; }
   button {
     display: inline-flex; align-items: center; justify-content: center;
     height: var(--ctl); padding: 0 18px; border: 0; border-radius: 8px; background: #c9474c;
@@ -58,24 +61,25 @@
   #save { display: none; margin-top: 16px; }
   #results { display: none; margin-top: 16px; font-size: .9rem; }
   #results div { padding: 6px 0; border-bottom: 1px solid #1c2029; }
-  #results a { color: #7ec8ff; }
+  #results a { color: var(--link); }
   #results .fail { color: #e8b0b3; }
   #library { margin-top: 10px; }
   #libSearchRow { display: none; position: relative; margin-top: 4px; }
   #libSearch {
-    width: 100%; height: var(--ctl); padding: 0 40px 0 36px; border-radius: 8px; border: 1px solid #2a2f3a;
+    width: 100%; height: var(--ctl); padding: 0 44px 0 36px; border-radius: 8px; border: 1px solid #2a2f3a;
     background-color: #171a21; color: #e6e6e6; font-size: 1rem;
     background-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'%20fill='none'%20stroke='%238a8f98'%20stroke-width='2.5'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Ccircle%20cx='11'%20cy='11'%20r='7'/%3E%3Cpath%20d='M20%2020l-4.35-4.35'/%3E%3C/svg%3E");
     background-repeat: no-repeat; background-position: 12px center; background-size: 15px 15px;
   }
   #libSearch::-webkit-search-cancel-button { -webkit-appearance: none; }
   #libSearchClear {
-    position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
-    height: 26px; padding: 0 9px; background: transparent; border: 0; color: #8a8f98;
+    position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+    height: var(--ctl-sm); padding: 0 10px; background: transparent; border: 0; color: #8a8f98;
   }
   #libSearchClear:hover { background: #232833; color: #e6e6e6; }
   .libRow {
-    display: flex; align-items: center; gap: 10px; padding: 9px 12px; margin-bottom: 6px;
+    display: flex; align-items: center; gap: 10px; padding: 5px 12px; margin-bottom: 6px;
+    min-height: var(--ctl);
     background: #171a21; border: 1px solid #2a2f3a; border-radius: 8px; font-size: .88rem;
     animation: libIn .32s cubic-bezier(.22,.61,.36,1) both;
   }
@@ -86,11 +90,11 @@
   @media (prefers-reduced-motion: reduce) { .libRow { animation: none; } }
   .libRow .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   img.cover {
-    width: 40px; height: 40px; border-radius: 6px; object-fit: cover;
+    width: 32px; height: 32px; border-radius: 6px; object-fit: cover;
     flex-shrink: 0; background: #232833;
   }
   .libRow .dur { color: #8a8f98; font-size: .8rem; white-space: nowrap; }
-  .libRow a { color: #7ec8ff; text-decoration: none; }
+  .libRow a { color: var(--link); text-decoration: none; }
   #libEmpty { color: #8a8f98; font-size: .88rem; }
   .spinner {
     width: 22px; height: 22px; margin: 14px auto; border: 3px solid #2a2f3a;
@@ -147,7 +151,7 @@
   }
   .trimTimes .dash { color: #8a8f98; }
   #trimResult { display: none; margin-top: 10px; font-size: .9rem; }
-  #trimResult a { color: #7ec8ff; }
+  #trimResult a { color: var(--link); }
 </style>
 </head>
 <body>
@@ -155,9 +159,9 @@
   <h1>yt-mp3</h1>
   <div class="sub">Best-quality audio from any YouTube video or playlist — no re-encode by default.</div>
 
-  <div class="row">
+  <div id="urlRow">
     <input id="url" type="url" placeholder="Paste YouTube URL..." autofocus>
-    <button id="previewBtn">Preview</button>
+    <button id="previewBtn" class="small">Preview</button>
   </div>
 
   <div id="preview">

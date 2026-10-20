@@ -623,31 +623,53 @@ def start_download(req: DownloadRequest):
     return {"group": group_id, "total": len(job_ids)}
 
 
-def group_snapshot(group_id: str) -> dict:
-    items = [jobs[jid].snapshot() for jid in groups[group_id]]
-    total = len(items)
-    done = sum(1 for it in items if it["status"] in ("done", "error"))
-    failed = sum(1 for it in items if it["status"] == "error")
-    overall = sum(it["progress"] for it in items) / total if total else 0
+GROUP_DONE_LIMIT = 50
+GROUP_ISSUE_LIMIT = 100
+
+
+def group_summary(group_id: str) -> dict:
+    """Aggregates + a bounded sample of items — a 10k-video group must not serialize
+    10k snapshots twice a second."""
+    ids = groups[group_id]
+    total = len(ids)
+    finished = failed = 0
+    overall = 0.0
+    items: list[dict] = []
+    issues: list[dict] = []
+    for jid in ids:
+        job = jobs[jid]
+        overall += job.progress
+        if job.status == "done":
+            finished += 1
+            if len(items) < GROUP_DONE_LIMIT:
+                items.append(job.snapshot())
+        elif job.status == "error":
+            finished += 1
+            failed += 1
+            if len(issues) < GROUP_ISSUE_LIMIT:
+                issues.append(job.snapshot())
     return {
         "total": total,
-        "done": done,
+        "done": finished,
         "failed": failed,
-        "progress": round(overall, 1),
-        "finished": done == total,
+        "progress": round(overall / total, 1) if total else 0,
+        "finished": finished == total,
         "items": items,
+        "issues": issues,
+        "truncated": finished > GROUP_DONE_LIMIT or failed > GROUP_ISSUE_LIMIT,
     }
 
 
 @app.get("/api/group/{group_id}/events")
-async def group_events(group_id: str):
+def group_events(group_id: str):
     if group_id not in groups:
         raise HTTPException(status_code=404, detail="group not found")
 
     async def stream():
         while True:
-            yield f"data: {json.dumps(group_snapshot(group_id))}\n\n"
-            if group_snapshot(group_id)["finished"]:
+            snap = group_summary(group_id)
+            yield f"data: {json.dumps(snap)}\n\n"
+            if snap["finished"]:
                 break
             await asyncio.sleep(0.5)
 

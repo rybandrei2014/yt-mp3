@@ -122,10 +122,10 @@
     padding: 20px;
   }
   .modal-box h3 { margin: 0 0 12px; font-size: 1.05rem; word-break: break-word; }
-  #plList { overflow-y: auto; flex: 1; margin: 10px 0; }
+  #plList { overflow-y: auto; overflow-anchor: none; flex: 1; min-height: 0; margin: 10px 0; }
   .entry {
     display: flex; align-items: center; gap: 10px; padding: 5px 10px; margin-bottom: 6px;
-    min-height: var(--ctl); border-radius: 8px; border: 1px solid transparent;
+    height: var(--ctl); border-radius: 8px; border: 1px solid transparent;
   }
   .entry:hover { background: #1d222c; }
   .entry .lab { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; cursor: pointer; }
@@ -224,7 +224,7 @@
       <button class="ghost small" id="selAll">Select all</button>
       <button class="ghost small" id="selNone">Select none</button>
     </div>
-    <div id="plList"></div>
+    <div id="plList"><div id="plPadTop"></div><div id="plRows"></div><div id="plPadBottom"></div></div>
     <div>
       <label class="qlabel"><input type="checkbox" id="plCoverChk"> Save cover art as separate .png file (for all)</label>
     </div>
@@ -367,61 +367,99 @@ $('resetBtn').onclick = () => {
   $('bar').style.width = '0%'; hideError();
 };
 
-/* ---------- playlist flow ---------- */
+/* ---------- playlist flow (virtualized: only visible rows exist in the DOM) ---------- */
+const PL_ROW = 50;
+const pl = { entries: [], sel: new Set() };
+
+function plRowDom(i) {
+  const e = pl.entries[i];
+  const row = document.createElement('div');
+  row.className = 'entry';
+  const lab = document.createElement('label');
+  lab.className = 'lab';
+  const cb = document.createElement('input');
+  cb.type = 'checkbox'; cb.checked = pl.sel.has(i); cb.dataset.i = i;
+  const img = document.createElement('img');
+  img.loading = 'lazy';
+  if (e.thumbnail) img.src = e.thumbnail; else img.style.visibility = 'hidden';
+  const t = document.createElement('div'); t.className = 't'; t.textContent = e.title; t.title = e.title;
+  const d = document.createElement('div'); d.className = 'd'; d.textContent = fmtDur(e.duration);
+  const pv = document.createElement('button');
+  pv.type = 'button'; pv.className = 'ghost small pv'; pv.title = 'Preview';
+  pv.textContent = (pvBtn && pvIndex === i) ? '⏸' : '▶';
+  if (pvBtn && pvIndex === i) { pv.title = 'Stop preview'; pvBtn = pv; }
+  pv.onclick = () => previewEntry(e.url, pv, i);
+  lab.append(cb, img, t, d);
+  row.append(lab, pv);
+  return row;
+}
+function plRender() {
+  const list = $('plList');
+  const n = pl.entries.length;
+  const start = Math.max(0, Math.floor(list.scrollTop / PL_ROW) - 6);
+  const end = Math.min(n, start + Math.ceil(list.clientHeight / PL_ROW) + 12);
+  const rows = $('plRows');
+  rows.style.height = `${(end - start) * PL_ROW}px`;
+  $('plPadTop').style.height = `${start * PL_ROW}px`;
+  $('plPadBottom').style.height = `${(n - end) * PL_ROW}px`;
+  rows.innerHTML = '';
+  const frag = document.createDocumentFragment();
+  for (let i = start; i < end; i++) frag.appendChild(plRowDom(i));
+  rows.appendChild(frag);
+}
+let plRaf = 0;
+$('plList').addEventListener('scroll', () => {
+  if (plRaf) return;
+  plRaf = requestAnimationFrame(() => { plRaf = 0; plRender(); });
+}, { passive: true });
+window.addEventListener('resize', () => { if ($('plModal').style.display === 'flex') plRender(); });
+$('plList').addEventListener('change', ev => {
+  const i = +ev.target.dataset.i;
+  if (!Number.isInteger(i)) return;
+  if (ev.target.checked) pl.sel.add(i); else pl.sel.delete(i);
+  updatePlDlCount();
+});
+
 function openPlaylistModal(info) {
   $('plTitle').textContent = info.title || 'Playlist';
   $('plMeta').textContent = `${info.count} videos${info.uploader ? ' · ' + info.uploader : ''}`;
-  const list = $('plList');
   pvStop();
-  list.innerHTML = '';
-  for (const e of info.entries) {
-    const row = document.createElement('div');
-    row.className = 'entry';
-    const lab = document.createElement('label');
-    lab.className = 'lab';
-    const cb = document.createElement('input');
-    cb.type = 'checkbox'; cb.checked = !/^\[(deleted|private) video\]/i.test(e.title || ''); cb.dataset.url = e.url;
-    const img = document.createElement('img');
-    if (e.thumbnail) img.src = e.thumbnail; else img.style.visibility = 'hidden';
-    const t = document.createElement('div'); t.className = 't'; t.textContent = e.title; t.title = e.title;
-    const d = document.createElement('div'); d.className = 'd'; d.textContent = fmtDur(e.duration);
-    const pv = document.createElement('button');
-    pv.type = 'button'; pv.className = 'ghost small pv'; pv.textContent = '▶'; pv.title = 'Preview';
-    pv.onclick = () => previewEntry(e.url, pv);
-    lab.append(cb, img, t, d);
-    row.append(lab, pv);
-    list.appendChild(row);
-  }
-  updatePlDlCount();
+  pl.entries = info.entries;
+  pl.sel = new Set();
+  pl.entries.forEach((e, i) => { if (!/^\[(deleted|private) video\]/i.test(e.title || '')) pl.sel.add(i); });
+  $('plList').scrollTop = 0;
   $('plModal').style.display = 'flex';
+  plRender();
+  updatePlDlCount();
 }
 function selectedUrls() {
-  return [...document.querySelectorAll('#plList input:checked')].map(cb => cb.dataset.url);
+  return [...pl.sel].sort((a, b) => a - b).map(i => pl.entries[i].url);
 }
 function updatePlDlCount() {
-  $('plDlBtn').textContent = `Download (${selectedUrls().length})`;
+  $('plDlBtn').textContent = `Download (${pl.sel.size})`;
 }
-$('plList').addEventListener('change', updatePlDlCount);
-$('selAll').onclick = () => { document.querySelectorAll('#plList input').forEach(cb => cb.checked = true); updatePlDlCount(); };
-$('selNone').onclick = () => { document.querySelectorAll('#plList input').forEach(cb => cb.checked = false); updatePlDlCount(); };
+$('selAll').onclick = () => { pl.sel = new Set(pl.entries.map((_, i) => i)); plRender(); updatePlDlCount(); };
+$('selNone').onclick = () => { pl.sel = new Set(); plRender(); updatePlDlCount(); };
 $('plCancel').onclick = () => { pvStop(); $('plModal').style.display = 'none'; };
 
 /* ---------- pre-download preview (playlist rows) ---------- */
-let pvAudio = null, pvBtn = null, pvToken = 0;
+let pvAudio = null, pvBtn = null, pvIndex = null, pvToken = 0;
 function pvStop() {
   pvToken++;
+  pvIndex = null;
   if (pvAudio) {
     pvAudio.onended = null; pvAudio.onerror = null;
     pvAudio.pause(); pvAudio.src = ''; pvAudio = null;
   }
   if (pvBtn) { pvBtn.textContent = '▶'; pvBtn.title = 'Preview'; pvBtn.disabled = false; pvBtn = null; }
 }
-async function previewEntry(url, btn) {
+async function previewEntry(url, btn, index = null) {
   const playing = pvBtn === btn;
   pvStop();
   if (playing) return;
   const token = pvToken;
   pvBtn = btn;
+  pvIndex = index;
   btn.disabled = true; btn.textContent = '…'; btn.title = 'loading preview…';
   try {
     const r = await fetch('/api/trim-preview', {
@@ -470,16 +508,16 @@ function watchGroup(groupId) {
     $('status').textContent = `${g.done}/${g.total} done` + (g.failed ? ` · ${g.failed} failed` : '');
     if (g.finished) {
       es.close();
-      renderResults(g.items);
+      renderResults(g);
       $('plDlBtn').disabled = false;
       refreshLibrary();
     }
   };
 }
-function renderResults(items) {
+function renderResults(g) {
   const box = $('results');
   box.innerHTML = '';
-  for (const it of items) {
+  for (const it of [...(g.items || []), ...(g.issues || [])]) {
     const div = document.createElement('div');
     if (it.status === 'done' && it.filename) {
       const a = document.createElement('a');
@@ -494,6 +532,12 @@ function renderResults(items) {
       div.className = 'fail';
       div.textContent = `✗ ${it.title || it.id} — ${it.error || 'failed'}`;
     }
+    box.appendChild(div);
+  }
+  if (g.truncated) {
+    const div = document.createElement('div');
+    div.className = 'sub';
+    div.textContent = `…and ${g.total - (g.items || []).length - (g.issues || []).length} more — see Library below.`;
     box.appendChild(div);
   }
   box.style.display = 'block';

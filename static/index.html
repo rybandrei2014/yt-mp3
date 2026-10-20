@@ -380,7 +380,7 @@ function openPlaylistModal(info) {
     const lab = document.createElement('label');
     lab.className = 'lab';
     const cb = document.createElement('input');
-    cb.type = 'checkbox'; cb.checked = true; cb.dataset.url = e.url;
+    cb.type = 'checkbox'; cb.checked = !/^\[(deleted|private) video\]/i.test(e.title || ''); cb.dataset.url = e.url;
     const img = document.createElement('img');
     if (e.thumbnail) img.src = e.thumbnail; else img.style.visibility = 'hidden';
     const t = document.createElement('div'); t.className = 't'; t.textContent = e.title; t.title = e.title;

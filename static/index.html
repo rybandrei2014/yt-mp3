@@ -9,6 +9,7 @@
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
+  html { scrollbar-gutter: stable; overflow-y: scroll; }
   body {
     margin: 0; min-height: 100vh; display: flex; justify-content: center;
     font-family: system-ui, sans-serif; background: #0f1115; color: #e6e6e6;
@@ -174,7 +175,7 @@
   <h2>Library</h2>
   <div class="row" id="libSearchRow">
     <input id="libSearch" type="search" placeholder="Search library by filename..." autocomplete="off">
-    <button id="libSearchClear" class="ghost small" style="display:none">✕</button>
+    <button id="libSearchClear" class="ghost small" style="visibility:hidden">✕</button>
   </div>
   <div id="library"></div>
   <div id="libSpinner" class="spinner" style="display:none"></div>
@@ -531,7 +532,7 @@ new IntersectionObserver((es) => { if (es[0].isIntersecting) loadLibrary(); })
 let libSearchTimer = null;
 $('libSearch').addEventListener('input', () => {
   const v = $('libSearch').value.trim();
-  $('libSearchClear').style.display = v ? 'block' : 'none';
+  $('libSearchClear').style.visibility = v ? 'visible' : 'hidden';
   clearTimeout(libSearchTimer);
   libSearchTimer = setTimeout(() => {
     if (v === lib.q) return;
@@ -540,11 +541,11 @@ $('libSearch').addEventListener('input', () => {
   }, 250);
 });
 $('libSearch').addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') { $('libSearch').value = ''; $('libSearchClear').style.display = 'none'; }
+  if (e.key === 'Escape') { $('libSearch').value = ''; $('libSearchClear').style.visibility = 'hidden'; }
 });
 $('libSearchClear').onclick = () => {
   $('libSearch').value = '';
-  $('libSearchClear').style.display = 'none';
+  $('libSearchClear').style.visibility = 'hidden';
   clearTimeout(libSearchTimer);
   if (lib.q) { lib.q = ''; reloadLibrary(); }
 };

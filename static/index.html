@@ -71,7 +71,13 @@
   .libRow {
     display: flex; align-items: center; gap: 10px; padding: 9px 12px; margin-bottom: 6px;
     background: #171a21; border: 1px solid #2a2f3a; border-radius: 8px; font-size: .88rem;
+    animation: libIn .32s cubic-bezier(.22,.61,.36,1) both;
   }
+  @keyframes libIn {
+    from { opacity: 0; transform: translateY(14px) scale(.985); }
+    to   { opacity: 1; transform: none; }
+  }
+  @media (prefers-reduced-motion: reduce) { .libRow { animation: none; } }
   .libRow .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   img.cover {
     width: 40px; height: 40px; border-radius: 6px; object-fit: cover;
@@ -450,9 +456,10 @@ function showLibEmpty() {
   $('libEmpty').style.display = lib.total ? 'none' : 'block';
 }
 
-function libRow(it) {
+function libRow(it, i = 0) {
   const row = document.createElement('div');
   row.className = 'libRow';
+  row.style.animationDelay = `${Math.min(i, 24) * 22}ms`;
   const name = document.createElement('span');
   name.className = 'name'; name.textContent = it.filename; name.title = it.filename;
   const dur = document.createElement('span');
@@ -499,12 +506,12 @@ async function silentRefresh() {
         const box = $('library');
         box.innerHTML = '';
         const frag = document.createDocumentFragment();
-        for (const it of items) frag.appendChild(libRow(it));
+        items.forEach((it, i) => frag.appendChild(libRow(it, i)));
         box.appendChild(frag);
         lib.cursor = next; lib.done = !next; lib.firstKey = key; lib.total = total;
         showLibSearch();
         showLibEmpty();
-        if ($('libSentinel').getBoundingClientRect().top < innerHeight) loadLibrary();
+        if ($('libSentinel').getBoundingClientRect().top < innerHeight + 240) loadLibrary();
       }
     }
   } catch (e) { /* keep current list */ }
@@ -523,7 +530,7 @@ async function loadLibrary() {
     if (gen === lib.gen) {
       const box = $('library');
       const frag = document.createDocumentFragment();
-      for (const it of items) frag.appendChild(libRow(it));
+      items.forEach((it, i) => frag.appendChild(libRow(it, i)));
       box.appendChild(frag);
       const first = !lib.cursor;
       lib.cursor = next;
@@ -538,9 +545,9 @@ async function loadLibrary() {
   lib.loading = false;
   if (gen !== lib.gen) return;
   if (lib.stale && scrollY < 50) { lib.stale = false; silentRefresh(); return; }
-  if ($('libSentinel').getBoundingClientRect().top < innerHeight) loadLibrary();
+  if ($('libSentinel').getBoundingClientRect().top < innerHeight + 240) loadLibrary();
 }
-new IntersectionObserver((es) => { if (es[0].isIntersecting) loadLibrary(); })
+new IntersectionObserver((es) => { if (es[0].isIntersecting) loadLibrary(); }, { rootMargin: '240px' })
   .observe($('libSentinel'));
 
 /* ---------- library search ---------- */

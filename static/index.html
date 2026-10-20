@@ -177,6 +177,7 @@
     <button id="libSearchClear" class="ghost small" style="display:none">✕</button>
   </div>
   <div id="library"></div>
+  <div id="libSpinner" class="spinner" style="display:none"></div>
   <div id="libEmpty" style="display:none">Nothing downloaded yet.</div>
   <div id="libSentinel"></div>
 </main>
@@ -470,6 +471,13 @@ function resetLibrary() {
 }
 function refreshLibrary() { resetLibrary(); loadLibrary(); }
 
+function reloadLibrary() {
+  const anchor = $('libSearchRow').getBoundingClientRect().top + scrollY - 12;
+  resetLibrary();
+  if (scrollY > anchor) scrollTo(0, anchor);
+  loadLibrary();
+}
+
 async function silentRefresh() {
   if (lib.loading) return;
   lib.loading = true;
@@ -478,8 +486,11 @@ async function silentRefresh() {
     const {items, total, next} = await r.json();
     const key = items.map(i => i.filename).join('\n');
     if (key !== lib.firstKey || total !== lib.total) {
-      $('library').innerHTML = '';
-      for (const it of items) $('library').appendChild(libRow(it));
+      const box = $('library');
+      box.innerHTML = '';
+      const frag = document.createDocumentFragment();
+      for (const it of items) frag.appendChild(libRow(it));
+      box.appendChild(frag);
       lib.cursor = next; lib.done = !next; lib.firstKey = key; lib.total = total;
       showLibSearch();
       showLibEmpty();
@@ -492,24 +503,24 @@ async function silentRefresh() {
 async function loadLibrary() {
   if (lib.loading || lib.done) return;
   lib.loading = true;
-  const box = $('library');
-  const spinner = document.createElement('div');
-  spinner.className = 'spinner';
-  box.appendChild(spinner);
+  $('libSpinner').style.display = 'block';
   $('libEmpty').style.display = 'none';
   try {
     const r = await fetch(`/api/library?${libQs()}`);
     const {items, total, next} = await r.json();
-    spinner.remove();
+    const box = $('library');
+    const frag = document.createDocumentFragment();
+    for (const it of items) frag.appendChild(libRow(it));
+    box.appendChild(frag);
     const first = !lib.cursor;
-    for (const it of items) box.appendChild(libRow(it));
     lib.cursor = next;
     lib.done = !next;
     lib.total = total;
     if (first) lib.firstKey = items.map(i => i.filename).join('\n');
     showLibSearch();
     showLibEmpty();
-  } catch (e) { spinner.remove(); }
+  } catch (e) { }
+  $('libSpinner').style.display = 'none';
   lib.loading = false;
   if ($('libSentinel').getBoundingClientRect().top < innerHeight) loadLibrary();
 }
@@ -525,8 +536,7 @@ $('libSearch').addEventListener('input', () => {
   libSearchTimer = setTimeout(() => {
     if (v === lib.q) return;
     lib.q = v;
-    resetLibrary();
-    loadLibrary();
+    reloadLibrary();
   }, 250);
 });
 $('libSearch').addEventListener('keydown', (e) => {
@@ -536,7 +546,7 @@ $('libSearchClear').onclick = () => {
   $('libSearch').value = '';
   $('libSearchClear').style.display = 'none';
   clearTimeout(libSearchTimer);
-  if (lib.q) { lib.q = ''; resetLibrary(); loadLibrary(); }
+  if (lib.q) { lib.q = ''; reloadLibrary(); }
 };
 
 /* ---------- scroll to top ---------- */

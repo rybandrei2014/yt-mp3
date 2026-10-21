@@ -6,6 +6,12 @@ Release notes for GitHub Releases are taken from the matching `## [vX.Y.Z]` sect
 
 ## [Unreleased]
 
+## [v0.3.1] - 2026-10-21
+
+### Fixed
+
+- The app no longer shows an outdated interface after an update: the page is now revalidated with the server on every load instead of being kept in the browser cache for hours (assets and API responses are still cached as before).
+
 ## [v0.3.0] - 2026-10-21
 
 ### Added
@@ -52,7 +58,8 @@ Release notes for GitHub Releases are taken from the matching `## [vX.Y.Z]` sect
 - Custom `download_dir` via `config.json`.
 - Release pipeline: PyInstaller onedir builds for win64 / macos-arm64 / linux64 with `ffmpeg`, `ffprobe` and `qjs` bundled, frozen-exe smoke test, GitHub Release assets.
 
-[Unreleased]: https://github.com/rybandrei2014/yt-mp3/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/rybandrei2014/yt-mp3/compare/v0.3.1...HEAD
+[v0.3.1]: https://github.com/rybandrei2014/yt-mp3/compare/v0.3.0...v0.3.1
 [v0.3.0]: https://github.com/rybandrei2014/yt-mp3/compare/v0.2.0...v0.3.0
 [v0.2.0]: https://github.com/rybandrei2014/yt-mp3/compare/v0.1.0...v0.2.0
 [v0.1.0]: https://github.com/rybandrei2014/yt-mp3/releases/tag/v0.1.0

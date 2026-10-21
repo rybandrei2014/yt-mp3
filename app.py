@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import yt_dlp
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -728,6 +728,16 @@ def get_file_by_name(name: str):
     if not str(path).startswith(str(DOWNLOADS_DIR.resolve())) or not path.is_file():
         raise HTTPException(status_code=404, detail="file not found")
     return FileResponse(path, filename=path.name)
+
+
+@app.middleware("http")
+async def revalidate_html(request: Request, call_next):
+    # StaticFiles sends ETag/Last-Modified but no Cache-Control -> browsers cache
+    # index.html heuristically and keep serving a stale UI for hours after an update.
+    response = await call_next(request)
+    if request.url.path in ("", "/") or request.url.path.endswith(".html"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
 
 
 app.mount("/", StaticFiles(directory=APP_DIR / "static", html=True), name="static")

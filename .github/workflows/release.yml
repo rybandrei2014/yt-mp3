@@ -108,8 +108,27 @@ jobs:
         shell: pwsh
         run: 7z a -tzip "yt-mp3-${{ github.ref_name }}-${{ matrix.tag }}.zip" dist/yt-mp3/*
 
+      - name: Release notes from CHANGELOG
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $body = ""
+          if (Test-Path CHANGELOG.md) {
+            $section = @()
+            $in = $false
+            foreach ($line in Get-Content CHANGELOG.md -Encoding utf8) {
+              if ($line.StartsWith("## ")) { $in = $line.StartsWith("## [$tag]"); continue }
+              if ($in) { $section += $line }
+            }
+            $body = ($section -join "`n").Trim()
+          }
+          if (-not $body) { $body = "Binaries for $tag - unpack and run yt-mp3." }
+          Set-Content -Path release-notes.md -Value $body -Encoding utf8
+          Get-Content release-notes.md
+
       - name: Upload to release
         uses: softprops/action-gh-release@v2
         with:
           files: yt-mp3-${{ github.ref_name }}-${{ matrix.tag }}.zip
-          generate_release_notes: true
+          body_path: release-notes.md
+          make_latest: true

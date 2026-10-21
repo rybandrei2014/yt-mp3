@@ -19,6 +19,7 @@ Runtime deps on PATH: `ffmpeg` (required for opus/m4a/mp3), a JS runtime — `no
 app.py               FastAPI backend + yt-dlp Python API + in-process job manager
 static/index.html    single-page UI (vanilla JS, SSE progress)
 config.json          optional (see config.example.json): browser cookies, port, max_concurrent, download_dir — GITIGNORED (personal), never commit
+CHANGELOG.md         Keep a Changelog sections; the `## [vX.Y.Z]` block matching the tag becomes the GitHub Release body
 icon.ico             Windows exe icon (generated from static/icon.png; regenerate: .venv\Scripts\python.exe tools\make_icons.py — needs Pillow)
 tools/make_icons.py  regenerates icon.ico; macOS icon.icns is built in CI (sips+iconutil from static/icon.png); static/icon.png also serves as browser favicon
 requirements.txt     loose pins | requirements.lock frozen (regenerate: pip freeze > requirements.lock)
@@ -30,6 +31,8 @@ PLAN.md              design rationale (read before changing quality/format logic
 ```
 
 ## Releases
+
+Release notes come from `CHANGELOG.md`: add a `## [vX.Y.Z] - YYYY-MM-DD` block (Added / Changed / Fixed, user-facing wording — not raw commit messages) **before** tagging; the workflow extracts that block into `release-notes.md` and passes it as `body_path` to `softprops/action-gh-release` (falls back to a one-liner if the block is missing). Keep `## [Unreleased]` at the top for work not yet shipped.
 
 `git tag vX.Y.Z && git push --tags` → CI (`.github/workflows/release.yml`) per OS: downloads ffmpeg+ffprobe (BtbN builds for win/linux; ffmpeg.martin-riedl.de for macos-arm64) and quickjs-ng `qjs` binary (pinned `QJS_VERSION`) into `bin/`, runs `pyinstaller yt-mp3.spec`, copies `bin/` into `dist/yt-mp3/`, smoke-tests the frozen exe (`/api/health` must report bundled ffmpeg + quickjs), zips to GitHub Release.
 

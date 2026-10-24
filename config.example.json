@@ -2,5 +2,6 @@
   "browser": "firefox",
   "max_concurrent": 2,
   "port": 8000,
-  "download_dir": "G:\\yt-mp3"
+  "download_dir": "G:\\yt-mp3",
+  "synth_tags": false
 }

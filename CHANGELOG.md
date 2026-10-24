@@ -6,6 +6,14 @@ Release notes for GitHub Releases are taken from the matching `## [vX.Y.Z]` sect
 
 ## [Unreleased]
 
+### Added
+
+- Lyrics alongside the audio: a "Save lyrics as .txt (+ .lrc when timed)" checkbox (single download and playlist modal, on by default). Writes `<same name>.txt` next to the audio file, plus `<same name>.lrc` when the source has timestamps. Sources are tried in order — lrclib.net, Genius, lyrics.ovh — and a match is only accepted when artist AND title agree with the track (duration is used as a tie-breaker), so a wrong song is never written; when nothing is found, no lyrics file is created.
+- Lyrics now keep song structure tags — `[Intro]`, `[Verse 1]`, `[Pre-Chorus]`, `[Chorus]`, `[Bridge]`, `[Instrumental Break]`, `[Guitar Solo]`, `[Outro]` — and they are always written in English: source tags in another language (`Куплет 2`, `후렴`, `Estribillo`, `Pause instrumentale`) are translated, and page-title lines (`Текст песни «Туман»`, `Paroles de "California"`) are removed. Since only Genius publishes structure tags, a lyrics source without them (lrclib, lyrics.ovh) is now superseded by the Genius text when the match is confirmed; the timed `.lrc` from the other source is still kept. If no source has tags, none are invented.
+- Lyrics lookups are cached in `downloads/.lyrics/`, so a re-download or a second format of the same track costs no extra requests; cutting a track copies its `.txt`/`.lrc`, and deleting a track deletes them with it.
+- `≡ Lyrics` button on each library row re-fetches the lyrics of an already downloaded track (no audio re-download) — handy after the tag fix above; the file is left as is when nothing is found.
+- Optional `"synth_tags": true` in `config.json` (off by default): when *no* source publishes structure tags for a track, `[Chorus]` is placed on the longest block repeated at least twice and the gaps get `[Verse N]`. Tracks without a repeating block are left without tags.
+
 ## [v0.3.1] - 2026-10-21
 
 ### Fixed

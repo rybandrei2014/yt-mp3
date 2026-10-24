@@ -4,3 +4,4 @@ downloads
 config.json
 build
 dist
+.server.pid

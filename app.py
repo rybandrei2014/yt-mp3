@@ -186,7 +186,10 @@ def build_download_opts(job: Job) -> dict:
         {
             "format": "bestaudio[acodec^=opus]/bestaudio/best",
             "paths": {"home": str(DOWNLOADS_DIR)},
-            "outtmpl": "%(uploader)s - %(title)s.%(ext)s",
+            # the job id makes the working filename unique per job, so concurrent jobs (a playlist
+            # that lists the same song twice) never share a file mid-postprocessing; run_job renames
+            # the finished file to the clean "Artist - Title" name
+            "outtmpl": f"%(uploader)s - %(title)s [{job.id}].%(ext)s",
             "progress_hooks": [make_progress_hook(job)],
         }
     )
@@ -401,19 +404,30 @@ def title_pairs(title: str) -> list[tuple[str, str]]:
     return pairs
 
 
-def lyrics_queries(info: dict) -> list[tuple[str, str]]:
-    """artist/track straight from yt-dlp when it has them (YouTube "Topic" uploads do), else
-    split the video title — NEVER the filename: uploader is a random re-upload channel there."""
+def clean_uploader(name: str) -> str:
+    return re.sub(r"(?i)\s*-\s*Topic$", "", (name or "").strip())
+
+
+def artist_title_candidates(info: dict) -> list[tuple[str, str]]:
+    """ONE artist/title heuristic that drives both the output filename ("Artist - Title") and the
+    lyrics lookup, best guess first:
+    1. artist+track straight from yt-dlp — reliable (YouTube "Topic" uploads fill both);
+    2. the video title split on " - "/" | " … (noise-stripped variant first: "Roar (Official
+       Video)" is both the better name and the better query) — what re-upload channels give;
+    3. artist alone (VEVO-ish channels publish artist without track), then the uploader — a junk
+       channel ("foleywarlocks") on re-uploads, so strictly the last resort."""
     title = (info.get("title") or "").strip()
-    uploader = re.sub(r"(?i)\s*-\s*Topic$", "", (info.get("uploader") or info.get("channel") or "").strip())
+    uploader = clean_uploader(info.get("uploader") or info.get("channel") or "")
     artist = (info.get("artist") or info.get("creator") or "").strip()
     track = (info.get("track") or "").strip()
+    clean = unwrap_noise(title)
     raw: list[tuple[str, str]] = []
     if artist and track:
         raw.append((artist, track))
-    for source in (title, unwrap_noise(title)):
+    for source in (clean, title):
         raw.extend(title_pairs(source))
-    clean = unwrap_noise(title)
+    if artist and not track:
+        raw.append((artist, clean or title))
     if uploader and clean:
         raw.append((uploader, clean))
     out, seen = [], set()
@@ -423,7 +437,65 @@ def lyrics_queries(info: dict) -> list[tuple[str, str]]:
             continue
         seen.add(key)
         out.append((a, t))
-    return out[:4]
+    return out
+
+
+def lyrics_queries(info: dict) -> list[tuple[str, str]]:
+    """Candidate (artist, title) pairs for the lyrics APIs. Cap = request budget: every query
+    costs one throttled request per provider (lyrics_slot, 1.2 s), playlists pay for it."""
+    return artist_title_candidates(info)[:4]
+
+
+# ---------- output filenames: "Artist - Title", the same heuristic that drives lyrics ----------
+
+UNSAFE_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f\x7f]')
+RESERVED_STEM = re.compile(r"(?i)^(con|prn|aux|nul|com[1-9]|lpt[1-9])$")
+NAME_PART_MAX = 100
+STEM_MAX = 200
+_name_lock = threading.Lock()
+
+
+def safe_part(s: str) -> str:
+    """Sanitize a filename piece we built ourselves. Windows silently strips trailing " " and "."
+    and refuses device names (CON, COM1…) — that would change the name the library id hashes."""
+    s = unicodedata.normalize("NFC", s or "")
+    s = re.sub(r"\s+", " ", UNSAFE_CHARS.sub(" ", s)).strip(" .")
+    s = s[:NAME_PART_MAX].strip(" .")
+    if RESERVED_STEM.match(s.split(".")[0]):
+        s = "_" + s
+    return s
+
+
+def output_stem(info: dict) -> str | None:
+    """'Artist - Title' from the best artist/title guess; bare Title when no artist can be
+    established (or the guess says artist == title). None = keep whatever yt-dlp named it."""
+    candidates = artist_title_candidates(info)
+    if not candidates:
+        return None
+    artist, title = safe_part(candidates[0][0]), safe_part(candidates[0][1])
+    if not title:
+        return None
+    stem = title if not artist or norm_text(artist) == norm_text(title) else f"{artist} - {title}"
+    return stem[:STEM_MAX].strip(" .")
+
+
+def rename_output(path: Path, stem: str) -> Path | None:
+    """Rename the finished download before sidecars are written, so audio + .png + .txt/.lrc share
+    one name. Collision (official audio and lyric video of the same song) gets " (2)", " (3)"."""
+    ext = path.suffix
+    if path.name[: len(path.name) - len(ext)] == stem:
+        return path
+    with _name_lock:
+        target = path.with_name(stem + ext)
+        n = 2
+        while target.exists():
+            target = path.with_name(f"{stem} ({n}){ext}")
+            n += 1
+        try:
+            path.rename(target)
+        except OSError:
+            return None
+        return target
 
 
 def clean_lyrics(text: str) -> str:
@@ -938,9 +1010,10 @@ def library_cover(fid: str):
 
 
 def lyrics_info_from_name(path: Path) -> dict:
-    """Rebuild a lookup query from the library filename (outtmpl is "uploader - title", and the
-    uploader is junk — lyrics_queries also splits the title itself and verification rejects
-    mismatches). Duration comes from ffprobe, which makes the match much stricter."""
+    """Rebuild a lookup query from the library filename ("Artist - Title"; pre-naming files are
+    "uploader - title" — artist_title_candidates still splits the title itself and verification
+    rejects mismatches, so junk uploader prefixes stay tolerated). Duration comes from ffprobe,
+    which makes the match much stricter."""
     name = path.name[: len(path.name) - len(path.suffix)]
     uploader, _, rest = name.partition(" - ")
     return {
@@ -1173,6 +1246,12 @@ def run_job(job: Job):
             job.error = "download finished but output file not found"
             job.status = "error"
             return
+        # rename to "Artist - Title" FIRST: cover/lyrics sidecars are named after the audio file
+        stem = output_stem(info)
+        if stem:
+            renamed = rename_output(Path(job.filepath), stem)
+            if renamed:
+                job.filepath = str(renamed)
         if job.cover:
             job.cover_path = extract_cover(job, info)
         if job.lyrics:

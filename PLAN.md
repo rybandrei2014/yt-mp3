@@ -70,7 +70,7 @@ Operational rule: track yt-dlp **nightly** releases; YouTube breaks extractors m
    - `format`: `bestaudio[acodec^=opus]/bestaudio/best`
    - `postprocessors`: FFmpegExtractAudio (only when m4a/mp3 chosen), EmbedThumbnail, EmbedMetadata / XAttrMetadata
    - `cookiesfrombrowser`: `("chrome",)` (configurable)
-   - `outtmpl`: `downloads/%(uploader)s - %(title)s.%(ext)s`
+   - `outtmpl`: `downloads/%(uploader)s - %(title)s [<job id>].%(ext)s` → renamed to `Artist - Title.<ext>` after the download (see AGENTS.md, "Filenames")
 4. Run on `localhost` — sidesteps anti-bot entirely (own IP + own browser cookies).
 
 ## 6. Stretch goals

@@ -4,6 +4,16 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Release notes for GitHub Releases are taken from the matching `## [vX.Y.Z]` section below (see `.github/workflows/release.yml`).
 
+## [v0.5.0] - 2026-10-27
+
+### Added
+
+- Files are now saved as `Artist - Title` instead of `uploader - title`. The uploader of a re-upload is a throwaway channel (`foleywarlocks - Сектор Газа - Туман.opus`), so the artist is taken from the track's own metadata when YouTube publishes it (`Acid Bath - Bleed Me an Ocean.opus`), otherwise from the video title (`Silent Circle - Egyptian Eyes.opus`); bracketed junk (`(Official Video)`, `[HD Remaster]`, `(2011)`) is dropped from the name. The `.png` cover and `.txt`/`.lrc` lyrics sidecars, the library rows and the `≡ Lyrics` re-fetch all use the same name. The same artist/title guess is now also the first lyrics search query, which improves matching for re-uploads. Files already in the library keep their old names.
+
+### Fixed
+
+- Jobs running at the same time no longer fight over one output file while they are being post-processed (a playlist that lists the same song twice, or official audio + lyric video of it). Such copies are now saved as `Artist - Title (2)`, ` (3)`… instead of one job failing with "Error opening output files".
+
 ## [v0.4.0] - 2026-10-25
 
 ### Added
